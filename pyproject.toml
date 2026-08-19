@@ -1,0 +1,18 @@
+[project]
+name = "seoul-startup-scout"
+version = "0.1.0"
+description = "서울시 상권 데이터 기반 창업 검토 후보 탐색 대시보드"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas==2.2.3",
+    "numpy==1.26.4",
+    "requests==2.32.3",
+    "beautifulsoup4==4.12.3",
+    "matplotlib==3.9.2",
+    "seaborn==0.13.2",
+    "plotly==5.24.1",
+    "streamlit==1.39.0",
+    "python-dotenv==1.0.1",
+]
+
+# 제거됨 (킥오프 확정): pyproj·folium·streamlit-folium — 지도 제외

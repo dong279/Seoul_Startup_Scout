@@ -1,0 +1,21 @@
+# 원본 데이터 (각자 로컬 보관 — 약 140MB)
+data/raw/*
+!data/raw/README.md
+
+# 산출 파일 (스크립트로 재생성)
+data/master.csv
+data/scores.csv
+data/news.csv
+
+# 비밀키
+.env
+
+# 환경
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store
