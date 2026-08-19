@@ -23,6 +23,6 @@ Streamlit 대시보드. **계약 정본은 `DEV_SPEC.md`** — 이 파일과 충
 
 ## 금지
 - seams/ 검증 스크립트 수정 금지 (검사가 틀렸다고 판단되면 멈추고 사람에게 보고)
-- scripts/scrape_news.py 삭제 금지 (API 전환 판단의 실측 근거)
+- 뉴스 수집 주력은 scripts/scrape_news.py (requests+bs4). collect_news.py는 API 백업 — 임의로 주력/백업을 바꾸지 말 것
 - 자기 조 오너십 밖 파일 수정 금지
 - git commit·push 금지 — 커밋·push·머지는 전부 사람이 직접 (에이전트는 파일 수정까지만)

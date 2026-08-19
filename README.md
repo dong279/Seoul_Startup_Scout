@@ -20,8 +20,9 @@ uv run python seams/check_master.py      # → OK 확인
 uv run python scripts/build_scores.py
 uv run python seams/check_scores.py      # → OK 확인
 
-# 4. (선택) 뉴스 수집 — .env.example 을 .env 로 복사 후 API 키 기입
-uv run python scripts/collect_news.py
+# 4. 뉴스 수집 (requests + BeautifulSoup)
+uv run python scripts/scrape_news.py
+#    차단·구조 변경 시 백업: .env 에 API 키 기입 후 uv run python scripts/collect_news.py
 
 # 5. 대시보드 실행
 uv run streamlit run app/main.py
@@ -33,7 +34,7 @@ uv run streamlit run app/main.py
 data/raw/ (CSV 8종, cp949)
    → build_master.py   → master.csv   (106,337행 × 77컬럼 · 상권 1,558)
    → build_scores.py   → scores.csv   (후보 3,443건 · 유형 7종 · 업종 11종)
-   → collect_news.py   → news.csv     (후보 상권 최근 3개월 경제지 기사)
+   → scrape_news.py    → news.csv     (후보 상권 최근 3개월 경제지 기사, bs4)
    → app/main.py       (Streamlit)
 ```
 
@@ -55,7 +56,7 @@ data/raw/ (CSV 8종, cp949)
 ├── pyproject.toml         의존성 (uv, 버전 고정) + uv.lock
 ├── config/업종_whitelist.csv
 ├── common/                loader(원본 읽기 단일 창구) · viz(폰트·팔레트)
-├── scripts/               build_master · build_scores · collect_news
+├── scripts/               build_master · build_scores · scrape_news(주력) · collect_news(백업)
 ├── seams/                 검증 게이트 2종 (수정 금지)
 ├── notebooks/             EDA (pandas + seaborn/matplotlib)
 ├── data/                  mock/(선착수용) · raw/(로컬 보관) · 산출 CSV

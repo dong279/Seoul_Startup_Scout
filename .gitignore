@@ -1,6 +1,5 @@
 # 원본 데이터 (각자 로컬 보관 — 약 140MB)
-data/raw/*
-!data/raw/README.md
+data/raw/
 
 # 산출 파일 (스크립트로 재생성)
 data/master.csv
@@ -15,7 +14,3 @@ data/news.csv
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-
-# OS
-Thumbs.db
-.DS_Store
