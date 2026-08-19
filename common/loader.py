@@ -4,6 +4,7 @@
 (인코딩·dtype 누락이 조인 실패의 최대 원인).
 """
 from __future__ import annotations
+import os
 import pandas as pd
 
 RAW_DIR = "data/raw/"
@@ -21,14 +22,19 @@ QUARTERS_4 = ["20252", "20253", "20254", "20261"]   # 폐업률 4분기 평균�
 
 
 def load(name: str, raw_dir: str = RAW_DIR, **kw) -> pd.DataFrame:
-    """서울시_상권분석서비스_{name}_.csv 를 읽는다.
-
-    >>> load("점포-상권")
-    >>> load("추정매출-상권", usecols=["상권_코드", "당월_매출_금액"])
+    """서울시 상권분석서비스 CSV를 읽는다. 두 가지 파일명 형식을 모두 허용:
+    ① 서울시_상권분석서비스_{name}_.csv   ② 서울시 상권분석서비스({name}).csv (포털 원본)
     """
-    return pd.read_csv(f"{raw_dir}서울시_상권분석서비스_{name}_.csv",
-                       encoding=ENCODING, dtype=KEY_DTYPES, **kw)
-
+    candidates = [
+        f"{raw_dir}서울시_상권분석서비스_{name}_.csv",
+        f"{raw_dir}서울시 상권분석서비스({name}).csv",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return pd.read_csv(path, encoding=ENCODING, dtype=KEY_DTYPES, **kw)
+    raise FileNotFoundError(
+        f"data/raw/ 에서 '{name}' CSV를 찾지 못했다. 허용 이름:\n  "
+        + "\n  ".join(candidates))
 
 def load_master(path: str = "data/master.csv") -> pd.DataFrame:
     """산출된 master.csv 를 읽는다 (utf-8-sig + 코드 컬럼 str)."""
