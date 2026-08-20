@@ -230,3 +230,4 @@ def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataF
     """④ 역방향 탐색 — 한 상권에서 공급이 부족한 업종 Top N.
     메인과 동일 로직, 축만 교체한다 (별도 점수 정의를 만들지 않는다)."""
     return df[df["상권_코드"] == 상권_코드].nlargest(n, "종합점수")
+ 
