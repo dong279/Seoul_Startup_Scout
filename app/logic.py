@@ -229,3 +229,21 @@ def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 상권 기준 공급 부족 업종 Top N."""
     return df[df["상권_코드"] == 상권_코드].nlargest(n, "종합점수")
+
+
+# ── 입지 탐색 ─────────────────────────────────────────────────────────
+def forward_lookup(
+    df: pd.DataFrame,
+    업종명: str,
+    유형: list[str] | None = None,
+    자치구: list[str] | None = None,
+    n: int = 10,
+) -> pd.DataFrame:
+    """입지 탐색 — 업종 기준 검토 후보 상권 Top N. `reverse_lookup`의 대칭.
+
+    scores.csv는 공급갭>0 후보만 담기므로(§4 아티팩트 2) 특정 업종의 후보가
+    없거나 극소수인 것은 **정상 상태**다. 화면은 이를 빈 결과로 안내한다.
+    업종을 고정하면 상권_코드가 유일해지므로 결과는 상권 단위 비교표가 된다.
+    """
+    out = filter_candidates(df, 업종=[업종명], 유형=유형, 자치구=자치구)
+    return out.nlargest(n, "종합점수")
