@@ -49,6 +49,7 @@ def make_scores(rng: np.random.Generator) -> pd.DataFrame:
             "행정동_코드": f"{11_000_000 + s % 396:08d}",
             "행정동_코드_명": f"목{s % 396}동",
             "유형": TYPES[s % 7],
+            "유효수요": rng.beta(2, 3),          # §5-3 결과 — 0~1, 산점도 x축
             "공급밀도": rng.uniform(1, 50),
             "동일유형_중앙_공급밀도": rng.uniform(20, 60),
             "공급갭": rng.uniform(0.01, 0.9),
@@ -61,6 +62,8 @@ def make_scores(rng: np.random.Generator) -> pd.DataFrame:
 
     # 이상치를 일부러 섞는다 — 하류가 이걸로 일한다
     df.loc[0, "공급갭"] = 0.999                       # 극단 상위
+    df.loc[6, "유효수요"] = 0.998                     # 산점도 우측 극단
+    df.loc[7, "유효수요"] = 0.002                     # 산점도 좌측 극단
     df.loc[1, "행정동_폐업률"] = 0.0                   # 폐업률 0 (안정성 만점)
     df.loc[2:5, "행정동_폐업률"] = df.loc[2, "행정동_폐업률"]  # 동점 — 정렬 안정성 시험
 
