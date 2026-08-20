@@ -7,7 +7,10 @@
 # 따라서 이 검사는 행 수 하한이 아니라 **담긴 행이 계약을 지키는지**를 본다.
 # 다만 전량 0건이면 수집 실패이므로 red.
 #
-# 사용: uv run python seams/check_news.py [경로]
+# 사용: uv run python seams/check_news.py [news경로] [scores경로]
+#   mock끼리 대조: uv run python seams/check_news.py data/mock/news.csv
+#   (scores 경로를 생략하면 news와 같은 디렉터리의 scores.csv를 본다)
+import os
 import re
 import sys
 from datetime import date, timedelta
@@ -15,7 +18,8 @@ from datetime import date, timedelta
 import pandas as pd
 
 PATH = sys.argv[1] if len(sys.argv) > 1 else "data/news.csv"
-SCORES = "data/scores.csv"
+SCORES = (sys.argv[2] if len(sys.argv) > 2
+          else os.path.join(os.path.dirname(PATH) or ".", "scores.csv"))
 
 COLS = ["상권_코드", "행정동_base", "제목", "언론사", "날짜", "링크"]
 PRESS_DOMAINS = {                       # DEV_SPEC §4 아티팩트 3 · 경제지 화이트리스트

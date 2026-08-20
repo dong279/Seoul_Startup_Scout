@@ -2,7 +2,8 @@
 # 화면을 검사하지 않는다. app/logic.py의 함수가 DEV_SPEC 계약대로 동작하는지만 본다.
 # 이 파일이 있어야 C조 에이전트 지시서의 [수용 기준]을 기계 검사로 쓸 수 있다.
 #
-# 사용: uv run python seams/check_app.py
+# 사용: uv run python seams/check_app.py [scores경로] [news경로]
+#   mock으로 선착수: uv run python seams/check_app.py data/mock/scores.csv data/mock/news.csv
 import os
 import sys
 
@@ -26,10 +27,13 @@ def main() -> int:
     if "import streamlit" in src:
         errs.append("app/logic.py가 streamlit을 import — UI와 로직 분리 규약 위반")
 
+    scores_path = sys.argv[1] if len(sys.argv) > 1 else logic.SCORES_PATH
+    news_path = sys.argv[2] if len(sys.argv) > 2 else logic.NEWS_PATH
     try:
-        df = logic.load_scores()
+        df = logic.load_scores(scores_path)
     except FileNotFoundError:
-        print("미산출: data/scores.csv 없음 — B조 산출 후 다시 실행")
+        print(f"미산출: {scores_path} 없음 — B조 산출 전이면 "
+              f"data/mock/scores.csv 로 먼저 돌린다")
         return 1
 
     # 1) 기본 가중치로 재계산한 값이 scores.csv의 종합점수와 일치해야 한다
@@ -74,7 +78,7 @@ def main() -> int:
         errs.append(f"빈 결과 summary에서 예외: {e} — 빈 상태 처리 누락")
 
     # 5) 뉴스 없는 상권은 예외가 아니라 빈 결과다
-    news = logic.load_news()
+    news = logic.load_news(news_path)
     try:
         empty = logic.news_for(news, "0000000")
         if len(empty):
@@ -91,7 +95,7 @@ def main() -> int:
     if errs:
         print("\n".join(errs))
         return 1
-    print(f"OK: app/logic.py 계약 준수 · 후보 {len(df):,}행 로드 · "
+    print(f"OK: app/logic.py 계약 준수 · {scores_path} {len(df):,}행 · "
           f"뉴스 {len(news):,}행 · 가중치 재계산 일치")
     return 0
 
