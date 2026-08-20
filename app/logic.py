@@ -85,7 +85,7 @@ def rescore(
     g, s = w_gap / total, w_stab / total
 
     out = df.copy()
-    out["종합점수"] = g * out["갭점수"] + s * out["안정성점수"]
+    out["종합점수"] = (g * out["갭점수"] + s * out["안정성점수"]).round(4)
     return out.sort_values("종합점수", ascending=False, kind="mergesort")
 
 
