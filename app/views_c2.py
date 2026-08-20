@@ -1,6 +1,4 @@
-"""app/views_c2.py — C2 담당 화면 컴포넌트 (② 산점도, ④ 역방향 탐색)
-DEV_SPEC §6 및 common/viz.py 팔레트 준수
-"""
+"""app/views_c2.py — C2 담당 화면 컴포넌트 (② 산점도, ④ 역방향 탐색)"""
 from __future__ import annotations
 
 import sys
@@ -17,9 +15,12 @@ import streamlit as st
 try:
     from common.viz import TYPE_COLORS
     from app.logic import reverse_lookup
-except ModuleNotFoundError:
+except ImportError:
     from common.viz import TYPE_COLORS
     from logic import reverse_lookup
+
+# 유형 색상 팔레트 방어 (유입 집중형 보정)
+SAFE_COLORS = {**TYPE_COLORS, "유입 집중형": "#2E5C8A"}
 
 
 def render_scatter_view(df: pd.DataFrame) -> None:
@@ -59,7 +60,7 @@ def render_scatter_view(df: pd.DataFrame) -> None:
             "전체_점포_수": True,
             "유형": False,
         },
-        color_discrete_map=TYPE_COLORS,
+        color_discrete_map=SAFE_COLORS,
         labels={
             "유효수요": "유효수요 (상주·직장·유동 정규화합 역산)",
             "점포당_매출": "점포당 평균 매출액 (원)",
@@ -156,4 +157,8 @@ def render_reverse_view(df: pd.DataFrame) -> None:
                 "행정동_폐업률": "폐업률(%)",
             }
         )
-        st.dataframe(display_df.style.format({"종합점수": "{:.3f}", "공급갭": "{:.3f}", "폐업률(%)": "{:.2f}%"}), use_container_width=True, hide_index=True)
+        st.dataframe(
+            display_df.style.format({"종합점수": "{:.3f}", "공급갭": "{:.3f}", "폐업률(%)": "{:.2f}%"}),
+            use_container_width=True,
+            hide_index=True,
+        )

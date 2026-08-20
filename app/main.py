@@ -11,35 +11,75 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+import pandas as pd
 import streamlit as st
 
-# 실행 환경 호환 import
 try:
-    from app.logic import filter_candidates, load_master, load_news, load_scores, rescore, summary
+    from app.logic import (
+        filter_candidates,
+        load_master,
+        load_news,
+        load_scores,
+        rescore,
+        summary,
+    )
     from app.views_c2 import render_reverse_view, render_scatter_view
     from app.views_c3 import render_detail_view
-except ModuleNotFoundError:
-    from logic import filter_candidates, load_master, load_news, load_scores, rescore, summary
+except ImportError:
+    from logic import (
+        filter_candidates,
+        load_master,
+        load_news,
+        load_scores,
+        rescore,
+        summary,
+    )
     from views_c2 import render_reverse_view, render_scatter_view
     from views_c3 import render_detail_view
 
 st.set_page_config(page_title="서울 창업 입지 탐색기", page_icon="🧭", layout="wide")
 
+
 @st.cache_data
 def get_data():
-    try:
-        df_sc = load_scores("data/scores.csv")
-    except FileNotFoundError:
+    # 1. scores 로드 (실데이터 우선, 실패 시 mock 폴백)
+    df_sc = None
+    for path in ["data/scores.csv", "data/mock/scores.csv"]:
+        try:
+            df_sc = load_scores(path)
+            if not df_sc.empty:
+                break
+        except Exception:
+            continue
+    if df_sc is None:
         df_sc = load_scores("data/mock/scores.csv")
-    try:
-        df_nw = load_news("data/news.csv")
-    except Exception:
+
+    # 2. news 로드
+    df_nw = None
+    for path in ["data/news.csv", "data/mock/news.csv"]:
+        try:
+            df_nw = load_news(path)
+            if not df_nw.empty:
+                break
+        except Exception:
+            continue
+    if df_nw is None:
         df_nw = load_news("data/mock/news.csv")
-    try:
-        df_ma = load_master("data/master.csv")
-    except FileNotFoundError:
-        df_ma = load_master("data/mock/master.csv")
+
+    # 3. master 로드
+    df_ma = None
+    for path in ["data/master.csv", "data/mock/master.csv"]:
+        try:
+            df_ma = load_master(path)
+            if not df_ma.empty:
+                break
+        except Exception:
+            continue
+    if df_ma is None:
+        df_ma = pd.DataFrame()
+
     return df_sc, df_nw, df_ma
+
 
 df_raw, df_news, df_master = get_data()
 
@@ -76,7 +116,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "① 후보 탐색 (목록)",
     "② 상권 포지셔닝 (산점도)",
     "③ 상권 상세 패널",
-    "④ 역방향 탐색"
+    "④ 역방향 탐색",
 ])
 
 with tab1:
@@ -84,7 +124,10 @@ with tab1:
     if df_filtered.empty:
         st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
     else:
-        disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "전체_점포_수"]
+        disp_cols = [
+            "상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명",
+            "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "전체_점포_수",
+        ]
         st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
 
 with tab2:
