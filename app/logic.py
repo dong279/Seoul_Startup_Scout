@@ -6,7 +6,7 @@
 하기 위해서다. UI에 로직이 섞이면 에이전트 산출물의 수용 기준을
 "화면이 잘 뜨면"으로밖에 쓸 수 없다.
 
-계약: DEV_SPEC §4 아티팩트 2·3, §5-6 종합점수
+계약: DEV_SPEC §4 아티팩트 1·2·3, §5-6 종합점수
 """
 from __future__ import annotations
 
@@ -16,8 +16,7 @@ import pandas as pd
 SCORES_PATH = "data/mock/scores.csv"
 NEWS_PATH = "data/mock/news.csv"
 MASTER_PATH = "data/mock/master.csv"
-CITY_STORE_PATH = "data/mock/city_store.csv"
-TREND_PATH = "data/industry_trend.csv"
+TREND_PATH = "data/mock/industry_trend.csv"
 LATEST_QUARTER = "20261"     # 상세 패널용 master.csv 최신 분기
 
 
@@ -76,17 +75,6 @@ def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
             "상권_코드": str,
             "서비스_업종_코드": str,
             "행정동_코드": str,
-        },
-    )
-
-def load_city_store(path: str = CITY_STORE_PATH) -> pd.DataFrame:
-    """서울시 업종별 개·폐업률 추이 데이터를 불러온다."""
-    return pd.read_csv(
-        path,
-        encoding="utf-8-sig",
-        dtype={
-            "기준_년분기_코드": str,
-            "서비스_업종_코드": str,
         },
     )
 
@@ -198,7 +186,7 @@ def detail_for(scores: pd.DataFrame,
     return {
         "상권명": s["상권_코드_명"],
         "업종": s["서비스_업종_코드_명"],
-        "유형": s["유형"],
+        "유형": s["유형"], # 판정 근거 부분
 
         "공급밀도": float(s["공급밀도"]),
         "동일유형_중앙_공급밀도":
@@ -216,17 +204,6 @@ def detail_for(scores: pd.DataFrame,
         "요일별_매출": 요일별_매출,
     }
 
-def city_trend_for(city_store: pd.DataFrame,
-                   서비스_업종_코드: str) -> pd.DataFrame:
-    """③ 상세 패널 — 선택 업종의 서울시 전체 개·폐업률 추이."""
-    return (
-        city_store[
-            city_store["서비스_업종_코드"] == 서비스_업종_코드
-        ]
-        .sort_values("기준_년분기_코드")
-        [["기준_년분기_코드", "개업_율", "폐업_률"]]
-        .reset_index(drop=True)
-    )
 
 def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame:
     """해당 상권 기사. **없으면 빈 DataFrame** — 호출부는 이를 정상 상태로
@@ -236,10 +213,6 @@ def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame
     return news[news["상권_코드"] == 상권_코드].sort_values(
         "날짜", ascending=False).head(n)
 
-
-<<<<<<< HEAD
-# ── 역방향 탐색 ───────────────────────────────────────────────────────
-=======
 def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
     """해당 업종의 분기별 추이. **없으면 빈 DataFrame** — 호출부는 이를 정상 상태로
     처리하고 '추이 데이터 없음'을 표시한다.
@@ -252,7 +225,7 @@ def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
     return trend[trend["서비스_업종_코드_명"] == 업종명]
 
 
->>>>>>> origin/main
+# ── 역방향 탐색 ───────────────────────────────────────────────────────
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 한 상권에서 공급이 부족한 업종 Top N.
     메인과 동일 로직, 축만 교체한다 (별도 점수 정의를 만들지 않는다)."""
