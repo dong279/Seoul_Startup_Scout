@@ -84,7 +84,7 @@ with tab1:
     if df_filtered.empty:
         st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
     else:
-        disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "전체_점포_수"]
+        disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수"]
         st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
 
 with tab2:
