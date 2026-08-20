@@ -17,11 +17,14 @@ SCORES_PATH = "data/mock/scores.csv"
 NEWS_PATH = "data/mock/news.csv"
 MASTER_PATH = "data/mock/master.csv"
 CITY_STORE_PATH = "data/mock/city_store.csv"
+TREND_PATH = "data/industry_trend.csv"
 LATEST_QUARTER = "20261"     # 상세 패널용 master.csv 최신 분기
+
 
 STR_COLS = ["상권_코드", "상권_코드_명", "서비스_업종_코드", "서비스_업종_코드_명",
             "상권_구분_코드_명", "유형", "자치구_코드_명", "행정동_코드", "행정동_코드_명"]
 NEWS_COLS = ["상권_코드", "행정동_base", "제목", "언론사", "날짜", "링크"]
+TREND_COLS = ["서비스_업종_코드_명", "기준_년분기_코드", "개업률", "폐업률"]
 
 W_GAP_DEFAULT = 0.6      # DEV_SPEC §5-6 확정 기본값
 W_STAB_DEFAULT = 0.4
@@ -32,6 +35,23 @@ def load_scores(path: str = SCORES_PATH) -> pd.DataFrame:
     """후보 테이블. 이미 공급갭 > 0 인 행만 담겨 있으므로 별도 필터하지 않는다."""
     return pd.read_csv(path, encoding="utf-8-sig",
                        dtype={c: str for c in STR_COLS})
+
+
+def load_trend(path: str = TREND_PATH) -> pd.DataFrame:
+    """아티팩트 5 — 업종별 서울시 전체 개·폐업률 추이 (참고 표시용).
+
+    **파일이 없어도 예외를 던지지 않는다.** 점수 계산에 들어가지 않는 참고 지표이므로,
+    미산출은 앱 장애가 아니라 해당 영역만 비는 상태다.
+    """
+    try:
+        df = pd.read_csv(path, encoding="utf-8-sig",
+                         dtype={"서비스_업종_코드_명": str, "기준_년분기_코드": str})
+    except FileNotFoundError:
+        return pd.DataFrame(columns=TREND_COLS)
+    for c in TREND_COLS:
+        if c not in df.columns:
+            df[c] = pd.NA
+    return df.sort_values("기준_년분기_코드")
 
 
 def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
@@ -217,7 +237,22 @@ def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame
         "날짜", ascending=False).head(n)
 
 
+<<<<<<< HEAD
 # ── 역방향 탐색 ───────────────────────────────────────────────────────
+=======
+def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
+    """해당 업종의 분기별 추이. **없으면 빈 DataFrame** — 호출부는 이를 정상 상태로
+    처리하고 '추이 데이터 없음'을 표시한다.
+
+    업종명 표기가 화이트리스트와 다르면 조용히 빈 결과가 되므로,
+    빈 결과가 계속 나오면 표기 불일치를 먼저 의심한다.
+    """
+    if trend.empty:
+        return trend
+    return trend[trend["서비스_업종_코드_명"] == 업종명]
+
+
+>>>>>>> origin/main
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 한 상권에서 공급이 부족한 업종 Top N.
     메인과 동일 로직, 축만 교체한다 (별도 점수 정의를 만들지 않는다)."""
