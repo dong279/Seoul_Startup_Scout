@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-SCORES_PATH = "data/scores.csv"
-NEWS_PATH = "data/news.csv"
+# 아래 PATH는 mock(임의 데이터, 예시 데이터)에 대한 경로이다. 데이터 작업이 완료되면 경로를 변경한다.
+SCORES_PATH = "data/mock/scores.csv"
+NEWS_PATH = "data/mock/news.csv"
+MASTER_PATH = "data/mock/master.csv"
+CITY_STORE_PATH = "data/mock/city_store.csv"
+LATEST_QUARTER = "20261"     # 상세 패널용 master.csv 최신 분기
 
 STR_COLS = ["상권_코드", "상권_코드_명", "서비스_업종_코드", "서비스_업종_코드_명",
             "상권_구분_코드_명", "유형", "자치구_코드_명", "행정동_코드", "행정동_코드_명"]
@@ -42,6 +46,29 @@ def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
             df[c] = pd.NA
     return df
 
+def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
+    """상세 패널에 필요한 연령·요일별 매출 데이터를 불러온다."""
+    return pd.read_csv(
+        path,
+        encoding="utf-8-sig",
+        dtype={
+            "기준_년분기_코드": str,
+            "상권_코드": str,
+            "서비스_업종_코드": str,
+            "행정동_코드": str,
+        },
+    )
+
+def load_city_store(path: str = CITY_STORE_PATH) -> pd.DataFrame:
+    """서울시 업종별 개·폐업률 추이 데이터를 불러온다."""
+    return pd.read_csv(
+        path,
+        encoding="utf-8-sig",
+        dtype={
+            "기준_년분기_코드": str,
+            "서비스_업종_코드": str,
+        },
+    )
 
 # ── 점수 재계산 ───────────────────────────────────────────────────────
 def rescore(df: pd.DataFrame,
@@ -93,8 +120,94 @@ def summary(df: pd.DataFrame) -> dict:
         "평균_공급갭": float(df["공급갭"].mean()),
     }
 
+# ── 상세 패널 ─────────────────────────────────────────────────────────
+def detail_for(scores: pd.DataFrame,
+               master: pd.DataFrame,
+               상권_코드: str,
+               서비스_업종_코드: str) -> dict:
+    """③ 상세 패널용 데이터 조회."""
 
-# ── 상세·역방향 ───────────────────────────────────────────────────────
+    score = scores[
+        (scores["상권_코드"] == 상권_코드) &
+        (scores["서비스_업종_코드"] == 서비스_업종_코드)
+    ]
+
+    latest = master[
+        master["기준_년분기_코드"] == LATEST_QUARTER
+    ]
+
+    detail = latest[
+        (latest["상권_코드"] == 상권_코드) &
+        (latest["서비스_업종_코드"] == 서비스_업종_코드)
+    ]
+
+    if score.empty or detail.empty:
+        return {}
+
+    s = score.iloc[0]
+    d = detail.iloc[0]
+
+    연령_구성 = pd.DataFrame({
+        "연령대": [
+            "10대", "20대", "30대",
+            "40대", "50대", "60대 이상"
+        ],
+        "상주인구": [
+            d["연령대_10_상주인구_수"],
+            d["연령대_20_상주인구_수"],
+            d["연령대_30_상주인구_수"],
+            d["연령대_40_상주인구_수"],
+            d["연령대_50_상주인구_수"],
+            d["연령대_60_이상_상주인구_수"],
+        ],
+    })
+
+    요일별_매출 = pd.DataFrame({
+        "요일": ["월", "화", "수", "목", "금", "토", "일"],
+        "매출금액": [
+            d["월요일_매출_금액"],
+            d["화요일_매출_금액"],
+            d["수요일_매출_금액"],
+            d["목요일_매출_금액"],
+            d["금요일_매출_금액"],
+            d["토요일_매출_금액"],
+            d["일요일_매출_금액"],
+        ],
+    })
+
+    return {
+        "상권명": s["상권_코드_명"],
+        "업종": s["서비스_업종_코드_명"],
+        "유형": s["유형"],
+
+        "공급밀도": float(s["공급밀도"]),
+        "동일유형_중앙_공급밀도":
+            float(s["동일유형_중앙_공급밀도"]),
+
+        "행정동_폐업률":
+            float(s["행정동_폐업률"]),
+
+        "당월_매출_금액":
+            int(s["당월_매출_금액"]),
+        "당월_매출_건수":
+            int(s["당월_매출_건수"]),
+
+        "연령_구성": 연령_구성,
+        "요일별_매출": 요일별_매출,
+    }
+
+def city_trend_for(city_store: pd.DataFrame,
+                   서비스_업종_코드: str) -> pd.DataFrame:
+    """③ 상세 패널 — 선택 업종의 서울시 전체 개·폐업률 추이."""
+    return (
+        city_store[
+            city_store["서비스_업종_코드"] == 서비스_업종_코드
+        ]
+        .sort_values("기준_년분기_코드")
+        [["기준_년분기_코드", "개업_율", "폐업_률"]]
+        .reset_index(drop=True)
+    )
+
 def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame:
     """해당 상권 기사. **없으면 빈 DataFrame** — 호출부는 이를 정상 상태로
     처리하고 '최근 3개월 관련 기사 없음'을 표시한다 (버그가 아니다)."""
@@ -104,6 +217,7 @@ def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame
         "날짜", ascending=False).head(n)
 
 
+# ── 역방향 탐색 ───────────────────────────────────────────────────────
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 한 상권에서 공급이 부족한 업종 Top N.
     메인과 동일 로직, 축만 교체한다 (별도 점수 정의를 만들지 않는다)."""
