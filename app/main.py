@@ -15,11 +15,13 @@ import streamlit as st
 
 # 실행 환경 호환 import
 try:
-    from app.logic import filter_candidates, load_news, load_scores, rescore, summary
+    from app.logic import filter_candidates, load_master, load_news, load_scores, rescore, summary
     from app.views_c2 import render_reverse_view, render_scatter_view
+    from app.views_c3 import render_detail_view
 except ModuleNotFoundError:
-    from logic import filter_candidates, load_news, load_scores, rescore, summary
+    from logic import filter_candidates, load_master, load_news, load_scores, rescore, summary
     from views_c2 import render_reverse_view, render_scatter_view
+    from views_c3 import render_detail_view
 
 st.set_page_config(page_title="서울 창업 입지 탐색기", page_icon="🧭", layout="wide")
 
@@ -33,9 +35,13 @@ def get_data():
         df_nw = load_news("data/news.csv")
     except Exception:
         df_nw = load_news("data/mock/news.csv")
-    return df_sc, df_nw
+    try:
+        df_ma = load_master("data/master.csv")
+    except FileNotFoundError:
+        df_ma = load_master("data/mock/master.csv")
+    return df_sc, df_nw, df_ma
 
-df_raw, df_news = get_data()
+df_raw, df_news, df_master = get_data()
 
 st.sidebar.header("🔍 탐색 조건 설정")
 
@@ -85,8 +91,7 @@ with tab2:
     render_scatter_view(df_filtered)
 
 with tab3:
-    st.subheader("🏢 상권 상세 패널")
-    st.info("C1 패널 연동 영역입니다.")
+    render_detail_view(df_filtered, df_master, df_news)
 
 with tab4:
     render_reverse_view(df_rescored)
