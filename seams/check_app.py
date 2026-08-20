@@ -86,7 +86,18 @@ def main() -> int:
     except Exception as e:                                   # noqa: BLE001
         errs.append(f"기사 없는 상권에서 예외: {e} — '기사 없음'은 정상 상태다")
 
-    # 6) 역방향 탐색은 해당 상권만, N건 이하
+    # 6) 참고 지표(아티팩트 5)는 없어도 죽지 않는다 — 게이트 없는 파일이므로
+    #    "미산출이 정상 상태로 처리되는가"만 확인한다
+    try:
+        trend = logic.load_trend("data/__없는파일__.csv")
+        if len(trend):
+            errs.append("없는 추이 파일에 데이터가 반환된다")
+        if len(logic.trend_for(trend, "한식음식점")):
+            errs.append("빈 추이에서 결과가 나온다")
+    except Exception as e:                                   # noqa: BLE001
+        errs.append(f"추이 파일 미산출에서 예외: {e} — 참고 지표는 없어도 정상이다")
+
+    # 7) 역방향 탐색은 해당 상권만, N건 이하
     code = df["상권_코드"].iloc[0]
     rev = logic.reverse_lookup(logic.rescore(df), code, n=5)
     if len(rev) > 5 or (len(rev) and not rev["상권_코드"].eq(code).all()):

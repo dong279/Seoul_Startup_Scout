@@ -2,7 +2,7 @@
 name = "seoul-startup-scout"
 version = "0.1.0"
 description = "서울시 상권 데이터 기반 창업 검토 후보 탐색 대시보드"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "pandas==2.2.3",
     "numpy==1.26.4",

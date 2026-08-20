@@ -1,5 +1,5 @@
 """app/logic.py — 대시보드 로직 (Streamlit 비의존 · C조 오너)
-seams/check_app.py 계약 100% 준수
+DEV_SPEC §4 아티팩트 1·2·3, §5-6 종합점수
 """
 from __future__ import annotations
 
@@ -8,15 +8,17 @@ import pandas as pd
 SCORES_PATH = "data/scores.csv"
 NEWS_PATH = "data/news.csv"
 MASTER_PATH = "data/master.csv"
-LATEST_QUARTER = "20261"
+TREND_PATH = "data/industry_trend.csv"
+LATEST_QUARTER = "20261"     # 상세 패널용 master.csv 최신 분기
 
 STR_COLS = [
     "상권_코드", "상권_코드_명", "서비스_업종_코드", "서비스_업종_코드_명",
     "상권_구분_코드_명", "유형", "자치구_코드_명", "행정동_코드", "행정동_코드_명",
 ]
 NEWS_COLS = ["상권_코드", "행정동_base", "제목", "언론사", "날짜", "링크"]
+TREND_COLS = ["서비스_업종_코드_명", "기준_년분기_코드", "개업률", "폐업률"]
 
-W_GAP_DEFAULT = 0.6
+W_GAP_DEFAULT = 0.6      # DEV_SPEC §5-6 확정 기본값
 W_STAB_DEFAULT = 0.4
 
 
@@ -26,8 +28,23 @@ def load_scores(path: str = SCORES_PATH) -> pd.DataFrame:
     return pd.read_csv(path, encoding="utf-8-sig", dtype={c: str for c in STR_COLS})
 
 
+def load_trend(path: str = TREND_PATH) -> pd.DataFrame:
+    """업종별 서울시 전체 개·폐업률 추이."""
+    try:
+        df = pd.read_csv(
+            path, encoding="utf-8-sig",
+            dtype={"서비스_업종_코드_명": str, "기준_년분기_코드": str},
+        )
+    except FileNotFoundError:
+        return pd.DataFrame(columns=TREND_COLS)
+    for c in TREND_COLS:
+        if c not in df.columns:
+            df[c] = pd.NA
+    return df.sort_values("기준_년분기_코드")
+
+
 def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
-    """뉴스 테이블 로드 (미수집 시 빈 DataFrame 반환)."""
+    """뉴스 테이블 로드."""
     try:
         df = pd.read_csv(path, encoding="utf-8-sig", dtype=str)
     except FileNotFoundError:
@@ -39,7 +56,7 @@ def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
 
 
 def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
-    """상세 패널용 master 데이터 로드 (미존재 시 빈 DataFrame 반환)."""
+    """상세 패널용 master 데이터 로드."""
     try:
         return pd.read_csv(
             path,
@@ -61,7 +78,7 @@ def rescore(
     w_gap: float = W_GAP_DEFAULT,
     w_stab: float = W_STAB_DEFAULT,
 ) -> pd.DataFrame:
-    """가중치 슬라이더 기반 종합점수 가중합 재계산."""
+    """슬라이더 가중치로 종합점수 가중합 재계산."""
     total = w_gap + w_stab
     if total <= 0:
         w_gap, w_stab, total = W_GAP_DEFAULT, W_STAB_DEFAULT, 1.0
@@ -102,14 +119,14 @@ def summary(df: pd.DataFrame) -> dict:
     }
 
 
-# ── 상세 패널 & 기사 & 역방향 ─────────────────────────────────────────
+# ── 상세 패널 ─────────────────────────────────────────────────────────
 def detail_for(
     scores: pd.DataFrame,
     master: pd.DataFrame,
     상권_코드: str,
     서비스_업종_코드: str,
 ) -> dict:
-    """③ 상세 패널용 데이터 조회 (master 부재 시 scores 기반 안전 대체)."""
+    """③ 상세 패널용 데이터 조회."""
     score = scores[
         (scores["상권_코드"] == 상권_코드)
         & (scores["서비스_업종_코드"] == 서비스_업종_코드)
@@ -152,7 +169,6 @@ def detail_for(
             ],
         })
     else:
-        # master 데이터가 아직 없거나 mock 상태일 때 기본 프로파일 생성
         base_sales = float(s.get("당월_매출_금액", 10000000))
         연령_구성 = pd.DataFrame({
             "연령대": ["10대", "20대", "30대", "40대", "50대", "60대 이상"],
@@ -178,12 +194,20 @@ def detail_for(
 
 
 def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame:
-    """해당 상권 관련 기사 조회."""
+    """해당 상권 기사 조회."""
     if news.empty:
         return news
     return news[news["상권_코드"] == 상권_코드].sort_values("날짜", ascending=False).head(n)
 
 
+def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
+    """해당 업종 분기별 추이 조회."""
+    if trend.empty:
+        return trend
+    return trend[trend["서비스_업종_코드_명"] == 업종명]
+
+
+# ── 역방향 탐색 ───────────────────────────────────────────────────────
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 상권 기준 공급 부족 업종 Top N."""
     return df[df["상권_코드"] == 상권_코드].nlargest(n, "종합점수")
