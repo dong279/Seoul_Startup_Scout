@@ -6,7 +6,7 @@
 #   - 유효수요·공급밀도 검사는 scores 단계로 이동 (인구 3종 가중 통합 확정 후)
 # DEV_SPEC §4 아티팩트1 계약을 그대로 검사로 옮긴 것.
 # 계약에 없는 검사를 추가하고 싶으면 문서에 먼저 넣는다.
-# 사용: python seams/check_master.py [경로]
+# 사용: python seams/check_master.py [경로] 으악
 import sys
 import pandas as pd
 

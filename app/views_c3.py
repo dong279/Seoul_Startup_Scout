@@ -14,7 +14,7 @@ import streamlit as st
 
 try:
     from app.logic import detail_for, news_for
-except ModuleNotFoundError:
+except ImportError:
     from logic import detail_for, news_for
 
 
@@ -30,7 +30,7 @@ TYPE_REASONS = {
 
 
 def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
-    """선택 상자용 상권×업종 후보를 중복 없이 만든다."""
+    """선택 상자용 상권×업종 후보를 중복 없이 생성."""
     cols = ["상권_코드", "상권_코드_명", "서비스_업종_코드", "서비스_업종_코드_명"]
     options = scores[cols].drop_duplicates(["상권_코드", "서비스_업종_코드"]).copy()
     options["label"] = (
@@ -56,7 +56,7 @@ def _render_news(articles: pd.DataFrame) -> None:
 
         text_col, link_col = st.columns([5, 1])
         with text_col:
-            st.markdown(f"**{title}**  ")
+            st.markdown(f"**{title}**")
             st.caption(f"{press} · {published_at}")
         with link_col:
             if pd.notna(link) and str(link).strip():
@@ -68,7 +68,7 @@ def render_detail_view(
     master: pd.DataFrame,
     news: pd.DataFrame,
 ) -> None:
-    """화면 ③: 검토 후보 하나의 근거·인구·매출·뉴스를 표시한다."""
+    """화면 ③: 검토 후보 하나의 근거·인구·매출·뉴스 표시."""
     st.subheader("🏢 상권 상세 패널")
     st.caption("검토 후보의 유형·공급 구조·인구·매출·최근 동향을 함께 확인합니다.")
 
@@ -107,9 +107,7 @@ def render_detail_view(
     closure_col.metric("행정동 4분기 폐업률", f"{detail['행정동_폐업률']:.2f}%")
     sales_col.metric("당월 매출액", f"{detail['당월_매출_금액']:,}원")
     st.caption(
-        "동일 유형 중앙 공급밀도: "
-        f"{detail['동일유형_중앙_공급밀도']:.3f} "
-        "(낮을수록 같은 유형 대비 공급 여유가 큼)"
+        f"동일 유형 중앙 공급밀도: {detail['동일유형_중앙_공급밀도']:.3f} (낮을수록 같은 유형 대비 공급 여유가 큼)"
     )
 
     age_col, weekday_col = st.columns(2)
