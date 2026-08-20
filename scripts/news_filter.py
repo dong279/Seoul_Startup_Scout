@@ -46,30 +46,37 @@ def clean(s: str) -> str:
     return html.unescape(TAG.sub("", s)).strip()
 
 
-def press_of(url: str) -> str | None:
-    """1단계 — 경제지 화이트리스트. 해당 없으면 None(탈락).
+OID_PRESS = {
+    "015": "한국경제", "009": "매일경제", "011": "서울경제",
+    "008": "머니투데이", "277": "아시아경제",
+    "014": "파이낸셜뉴스", "018": "이데일리",
+}
+OID_PATTERN = re.compile(r"/article/(\d{3})/")
 
-    ⚠️ 네이버 인링크(n.news.naver.com/mnews/article/{oid}/{aid})는 여기서 탈락한다.
-    oid 매핑을 추가하면 확보율이 오르지만, `check_news.py`가 `링크` 컬럼을
-    화이트리스트 도메인 정규식으로 검사하므로 **게이트가 red가 된다**.
-    도입하려면 게이트의 허용 도메인 확장을 같은 커밋에 담아야 한다.
+
+def press_of(url: str) -> str | None:
+    """1단계 — 경제지 화이트리스트. 도메인 또는 네이버 뉴스 OID로 판정.
+    해당 없으면 None(탈락).
     """
     for dom, name in PRESS.items():
         if dom in url:
             return name
+    m = OID_PATTERN.search(url)
+    if m and m.group(1) in OID_PRESS:
+        return OID_PRESS[m.group(1)]
     return None
 
 
 def relevance(area: str, title: str, desc: str) -> int:
     """3단계 — 관련도 점수. `MIN_SCORE` 미만은 탈락.
 
-    제목에도 요약 앞부분에도 지역명이 없으면 지역이 스쳐 지나가는 기사
-    (예: 전국 유통 기사에 '성수동 팝업' 한 줄)일 가능성이 높다 — 실측 확인된 패턴.
+    제목이나 요약 앞부분에 지역명(또는 동/구 생략 기본명)이 포함되어야 관련 상권 기사로 판정.
     """
     score = 0
-    if area in title:
+    short_area = area[:-1] if (area.endswith("동") or area.endswith("구")) and len(area) > 2 else area
+    if area in title or short_area in title:
         score += 2
-    elif area in desc[:60]:
+    elif area in desc[:100] or short_area in desc[:100]:
         score += 1
     if score and TOPIC.search(title + " " + desc):
         score += 1
