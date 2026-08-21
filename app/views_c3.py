@@ -1,4 +1,4 @@
-"""상권 상세 패널(화면 ③) Streamlit 컴포넌트."""
+"""상권 상세 패널(화면 ③) 및 상권 뉴스 화면 Streamlit 컴포넌트."""
 from __future__ import annotations
 
 import sys
@@ -13,9 +13,9 @@ import plotly.express as px
 import streamlit as st
 
 try:
-    from app.logic import detail_for, news_for
+    from app.logic import detail_for
 except ImportError:
-    from logic import detail_for, news_for
+    from logic import detail_for
 
 
 TYPE_REASONS = {
@@ -41,36 +41,13 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
     return options.sort_values("label", kind="stable").reset_index(drop=True)
 
 
-def _render_news(articles: pd.DataFrame) -> None:
-    """최근 기사 최대 3건을 빈 상태까지 포함해 표시한다."""
-    st.subheader("📰 최근 3개월 경제지 기사")
-    if articles.empty:
-        st.info("최근 3개월 관련 기사 없음")
-        return
-
-    for _, article in articles.iterrows():
-        title = str(article["제목"])
-        press = str(article["언론사"])
-        published_at = str(article["날짜"])
-        link = article["링크"]
-
-        text_col, link_col = st.columns([5, 1])
-        with text_col:
-            st.markdown(f"**{title}**")
-            st.caption(f"{press} · {published_at}")
-        with link_col:
-            if pd.notna(link) and str(link).strip():
-                st.link_button("기사 보기", str(link), use_container_width=True)
-
-
 def render_detail_view(
     scores: pd.DataFrame,
     master: pd.DataFrame,
-    news: pd.DataFrame,
 ) -> None:
-    """화면 ③: 검토 후보 하나의 근거·인구·매출·뉴스 표시."""
+    """화면 ③: 검토 후보 하나의 근거·인구·매출 표시."""
     st.subheader("🏢 상권 상세 패널")
-    st.caption("검토 후보의 유형·공급 구조·인구·매출·최근 동향을 함께 확인합니다.")
+    st.caption("검토 후보의 유형·공급 구조·인구·매출 상세 현황을 확인합니다.")
 
     if scores.empty:
         st.info("상세 정보를 확인할 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
@@ -134,4 +111,35 @@ def render_detail_view(
             hide_index=True,
         )
 
-    _render_news(news_for(news, selected["상권_코드"], n=3))
+
+def render_news_view(news: pd.DataFrame, scores: pd.DataFrame | None = None) -> None:
+    """화면: 수집된 최근 경제지 상권 기사 전체 목록 표시 (선택/필터 없이 전체 출력)."""
+    st.subheader("📰 상권 경제지 기사 동향")
+    st.caption("서울 주요 상권 및 행정동의 최근 3개월 경제지 관련 기사 모음입니다.")
+
+    if news.empty:
+        st.info("수집된 뉴스 데이터가 없습니다.")
+        return
+
+    # 중복 기사 제거 (제목 및 링크 기준) 후 최신 날짜순 정렬
+    display_news = news.drop_duplicates(subset=["제목", "링크"]).sort_values("날짜", ascending=False)
+
+    st.markdown(f"총 **{len(display_news):,}건**의 상권 관련 경제지 기사")
+    st.divider()
+
+    for _, article in display_news.iterrows():
+        title = str(article.get("제목", ""))
+        press = str(article.get("언론사", ""))
+        published_at = str(article.get("날짜", ""))
+        area = str(article.get("행정동_base", ""))
+        link = article.get("링크", "")
+
+        text_col, link_col = st.columns([5, 1])
+        with text_col:
+            st.markdown(f"**{title}**")
+            caption_parts = [p for p in [press, published_at, f"📍 {area}" if (area and area != "nan") else ""] if p]
+            st.caption(" · ".join(caption_parts))
+        with link_col:
+            if pd.notna(link) and str(link).strip():
+                st.link_button("기사 보기", str(link), use_container_width=True)
+        st.divider()
