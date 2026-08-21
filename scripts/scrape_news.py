@@ -1,270 +1,210 @@
-"""scripts/scrape_news.py — data/news.csv 생성 (뉴스 담당, 【주력 경로】).
-
-requests + BeautifulSoup으로 네이버 뉴스 검색 결과를 수집한다.
-
-3일차 실측에서 확인된 문제와 해결 (v6):
-  - 초기 403은 **IP 차단**이었다 (PC 변경 후 HTTP 200 정상). 셀렉터 문제가 아니었다.
-  - 남은 0건의 원인은 파싱 두 곳:
-    ① `a.find_parent(["li","div"])`가 '가장 가까운' 부모를 잡는데 날짜는 그보다
-       위 카드 루트에 있다 → `parse_date`가 전건 None → 계약(날짜 불명은 탈락)대로
-       모두 버려졌다. `card_root()`로 날짜가 나올 때까지 최대 4단계 거슬러 올라간다.
-    ② 네이버 카드는 **제목과 요약이 같은 URL을 가리키는 별개의 `<a>`** 다. a 태그를
-       하나씩 순회하면 한 기사가 두 행이 되고, 요약문이 `제목` 컬럼에 들어간다.
-       → href로 먼저 묶고(`groups`) 그룹의 첫 링크만 제목으로 쓴다.
-    ③ 화면용으로 잘린 텍스트 대신 `a["title"]` 속성의 원본 제목을 쓰고,
-       접근성 숨김 텍스트('새 창 열림' 등)를 꼬리에서 제거한다.
-
-정밀도 필터는 여기서 구현하지 않는다 — `news_filter.py`를 백업 경로와 **공유**한다.
-각자 구현하면 한쪽만 고쳐지고, 두 경로의 스키마는 같은데 결과만 달라져
-게이트가 그 차이를 잡지 못한다.
-
-수집 매너: 요청 간 time.sleep(1) 이상 · 브라우저 User-Agent · 검색 첫 페이지만.
-연속 실패 3회면 간격을 3초로 확대한다.
-
-**백업 전환은 코드가 한다** (DEV_SPEC §4 아티팩트 3): 수집 완료 시점에 확보 지역이
-MIN_AREAS 미만이면 `collect_news.collect_all()`을 자동 호출하고 stderr에 기록한다.
-사람의 판단에 걸어두면 마감 직전에 전환이 일어나지 않는다.
-
-사용:  uv run python scripts/scrape_news.py            # 전량 수집 → 저장
-       uv run python scripts/scrape_news.py 망원동      # 단건 스모크 (저장 안 함)
-       NEWS_DEBUG=1 uv run python scripts/scrape_news.py 망원동   # 단계별 카운터
-출력:  data/news.csv (상권_코드, 행정동_base, 제목, 언론사, 날짜, 링크)
-"""
+"""scripts/scrape_news.py — 서울 전체 음식점/외식 관련 고품질 뉴스 자동 수집 (창업, 상권, 배달, 경기, 임대료 등)."""
 from __future__ import annotations
 
 import os
 import re
 import sys
 import time
-from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scripts.news_filter import (  # noqa: E402
-    DAYS, MIN_AREAS, MIN_SCORE, MIN_TITLE_LEN, PER_AREA, clean, expand,
-    press_of, relevance, save, target_areas,
+from scripts.news_filter import (
+    DAYS, MIN_TITLE_LEN, PRESS, clean, press_of, FOOD_TOPIC,
 )
 
-SLEEP = 1.0                       # 요청 간 최소 간격 (매너)
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 
-REL_DATE = re.compile(r"(\d+)(분|시간|일|주)\s*전")
-
-# 기사가 아닌 네이버 내부 링크 — 디버그 표본에서 실제로 잡힌 것들
-SKIP = re.compile(r"//(keep|mkt|blog|cafe|shopping|search)\.naver\.com"
-                  r"|/main/static/")
-# 접근성 숨김 텍스트가 제목 꼬리에 붙는다 ("… 새 창 열림")
-TAIL = re.compile(r"\s*(새 창 열림|네이버뉴스|언론사 선정|전체 기사 보기"
-                  r"|본문 듣기|다른 기사 보기)\s*$")
-CARD_MAX_LEN = 1200               # 이보다 크면 결과 목록 전체 — 옆 기사 날짜를 집는다
-CARD_MAX_UP = 4                   # 카드 루트를 찾아 올라갈 최대 단계
-
-
-def parse_date(text: str, now: datetime) -> str | None:
-    """'3일 전' / '2026.08.12.' 두 형식을 YYYY-MM-DD로.
-
-    **파싱 실패 시 None을 돌려준다.** 예전에는 오늘 날짜로 대체했는데,
-    그러면 90일이 지난 기사가 오늘 기사로 둔갑해 게이트를 통과한다.
-    날짜를 모르는 기사는 버리는 편이 낫다.
-    """
-    m = REL_DATE.search(text)
-    if m:
-        n, unit = int(m.group(1)), m.group(2)
-        delta = {"분": timedelta(minutes=n), "시간": timedelta(hours=n),
-                 "일": timedelta(days=n), "주": timedelta(weeks=n)}[unit]
-        return (now - delta).strftime("%Y-%m-%d")
-    m = re.search(r"(\d{4})\.(\d{1,2})\.(\d{1,2})", text)
-    if m:
-        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-    return None
+# 서울 전체 음식점 관련 필수 검색 쿼리 (창업, 상권, 배달, 경기, 임대료 등)
+SEOUL_FOOD_QUERIES = [
+    "서울 음식점 창업",
+    "서울 외식업 창업",
+    "서울 식당 상권",
+    "서울 골목상권 음식점",
+    "서울 음식점 배달",
+    "서울 외식 경기",
+    "서울 음식점 임대료",
+    "서울 상가 임대료 외식",
+    "서울 식당 자영업",
+    "서울 카페 창업",
+    "서울 음식점 폐업 공실",
+    "서울 외식 물가 소비",
+]
 
 
-def strip_tail(s: str) -> str:
-    """제목 꼬리의 접근성 숨김 텍스트를 반복 제거한다 (두 개가 겹쳐 붙기도 한다)."""
-    prev = None
-    while prev != s:
-        prev, s = s, TAIL.sub("", s).strip()
-    return s
-
-
-def card_root(a, now: datetime):
-    """날짜 문자열이 나올 때까지 부모를 거슬러 올라가 기사 카드를 찾는다.
-
-    `find_parent(["li","div"])`는 '가장 가까운' 부모라 제목만 감싼 래퍼를 잡는다.
-    날짜는 그보다 위에 있어서 `parse_date`가 전건 None을 돌려주고, 계약상
-    '날짜 불명은 탈락'이므로 조용히 전부 버려진다 — 3일차 0건의 주원인.
-    """
-    node = a
-    for _ in range(CARD_MAX_UP):
-        node = node.parent
-        if node is None:
+def parse_article_detail(link: str, sess: requests.Session, now: datetime, cutoff: str) -> dict | None:
+    try:
+        res = sess.get(link, timeout=8)
+        if res.status_code != 200 or not res.text:
             return None
-        text = node.get_text(" ", strip=True)
-        if len(text) > CARD_MAX_LEN:      # 목록 전체로 올라갔다 — 옆 기사 날짜 오염
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1. 날짜 추출
+        date_str = None
+        date_meta = (
+            soup.select_one("meta[property='article:published_time']")
+            or soup.select_one("meta[property='og:regDate']")
+        )
+        if date_meta and date_meta.get("content"):
+            date_str = date_meta["content"][:10].replace(".", "-").replace("/", "-")
+        else:
+            date_elem = soup.select_one(
+                "span.media_end_head_info_datestamp_time, span._ARTICLE_DATE_TIME, em.media_end_head_info_datestamp_time"
+            )
+            if date_elem:
+                m = re.search(r"(\d{4})[\.-](\d{2})[\.-](\d{2})", date_elem.get_text())
+                if m:
+                    date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+        if not date_str or date_str < cutoff:
             return None
-        if parse_date(text, now):
-            return node
-    return None
+
+        # 2. 제목 추출
+        title_elem = soup.select_one("h2#title_area, h2.media_end_head_headline, div.media_end_head_title h2, h2")
+        if not title_elem:
+            return None
+        title = clean(title_elem.get_text(strip=True))
+        if len(title) < MIN_TITLE_LEN or "네이버뉴스" in title:
+            return None
+
+        # 3. 언론사 추출
+        origin_elem = soup.select_one("a.media_end_head_origin_link")
+        origin_url = origin_elem["href"] if (origin_elem and origin_elem.get("href")) else link
+        press = press_of(origin_url) or press_of(link)
+        if not press:
+            # 메타 태그 언론사 확인
+            press_meta = soup.select_one("meta[property='og:article:author'], meta[name='twitter:creator']")
+            if press_meta and press_meta.get("content"):
+                p_name = press_meta["content"].strip()
+                for dom_name in PRESS.values():
+                    if dom_name in p_name:
+                        press = dom_name
+                        break
+        if not press:
+            return None
+
+        final_link = origin_url if any(dom in origin_url for dom in PRESS) else link
+
+        # 4. 본문 및 요약 추출
+        body_elem = soup.select_one("article#dic_area, div#articeBody, div#newsct_article")
+        body_text = clean(body_elem.get_text(" ", strip=True)) if body_elem else ""
+
+        # 키워드 관련성 검증 (음식점/외식 + 창업/상권/배달/경기/임대료 등)
+        full_text = f"{title} {body_text}"
+        if not FOOD_TOPIC.search(full_text):
+            return None
+
+        summary = body_text[:200] + ("..." if len(body_text) > 200 else "")
+
+        return {
+            "제목": title,
+            "언론사": press,
+            "날짜": date_str,
+            "링크": final_link,
+            "요약": summary,
+        }
+    except Exception:
+        return None
 
 
-def scrape_area(area: str, now: datetime, sess: requests.Session) -> list[tuple]:
-    """한 지역의 검색 첫 페이지에서 (제목, 언론사, 날짜, 링크) 상위 3건을 뽑는다."""
-    since = (now - timedelta(days=DAYS)).strftime("%Y.%m.%d")
-    until = now.strftime("%Y.%m.%d")
-    url = ("https://search.naver.com/search.naver?where=news&sm=tab_opt"
-           f"&query={quote(f'서울 {area} 상권')}"
-           f"&pd=3&ds={since}&de={until}&sort=1")   # pd=3: 기간 지정, sort=1: 최신순
-    r = sess.get(url, timeout=10)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
-
+def scrape_seoul_food_news(output_path: str = "data/seoul_food_news.csv") -> pd.DataFrame:
+    """서울 전체 범위 음식점 관련 뉴스(창업, 상권, 배달, 경기, 임대료 등) 스크래핑."""
+    now = datetime.now()
     cutoff = (now - timedelta(days=DAYS)).strftime("%Y-%m-%d")
 
-    # ── 1) 경제지 화이트리스트 + href로 묶기 ────────────────────────────
-    # 네이버 카드는 제목과 요약이 같은 URL을 가리키는 별개의 <a>다.
-    # 묶지 않으면 한 기사가 두 행이 되고 요약문이 제목 컬럼에 들어간다.
-    groups: dict[str, list] = {}
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if not href.startswith("http") or SKIP.search(href):
-            continue
-        if press_of(href) is None:
-            continue
-        groups.setdefault(href, []).append(a)
-
-    stat = Counter({"경제지": len(groups)})
-    out = []
-    for href, tags in groups.items():
-        head = tags[0]                    # 문서 순서상 첫 링크가 제목
-        # 화면용으로 잘린 텍스트 대신 title 속성의 원본 제목을 우선한다
-        title = clean(strip_tail(head.get("title")
-                                 or head.get_text(" ", strip=True)))
-        if len(title) < MIN_TITLE_LEN:    # 버튼 라벨·언론사명 제외
-            continue
-        stat["제목"] += 1
-
-        block = card_root(head, now)
-        texts = block.get_text(" ", strip=True) if block else ""
-        date = parse_date(texts, now)
-        if date is None or date < cutoff:  # 2) 날짜 불명·90일 초과 탈락
-            continue
-        stat["날짜"] += 1
-
-        # 요약은 같은 카드의 나머지 링크에서 — 없으면 카드 텍스트에서 제목을 뺀 나머지
-        desc = clean(strip_tail(" ".join(t.get_text(" ", strip=True)
-                                         for t in tags[1:])))
-        if not desc:
-            desc = clean(texts.replace(title, " ")[:200])
-
-        score = relevance(area, title, desc)
-        if score < MIN_SCORE:              # 3) 관련도 하한 미달 탈락
-            continue
-        stat["관련도"] += 1
-        out.append((score, date, title, press_of(href), href))
-
-    if os.getenv("NEWS_DEBUG"):
-        print(f"  [{area}] {dict(stat)}", file=sys.stderr)
-
-    # 같은 제목 중복 제거 (원문 링크와 네이버 인링크가 별개 URL인 경우 대비)
-    seen, dedup = set(), []
-    for row in out:
-        if row[2] in seen:
-            continue
-        seen.add(row[2])
-        dedup.append(row)
-    # 4) 관련도 높은 순 → 같은 점수면 최신순, 상위 3건
-    dedup.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    return [(title, press, date, href)
-            for _, date, title, press, href in dedup[:PER_AREA]]
-
-
-def collect_all(scores_path: str = "data/scores.csv") -> list[dict]:
-    """스크래핑으로 수집만 하고 행 목록을 돌려준다 (파일은 쓰지 않는다)."""
-    global SLEEP
-    area_to_sangwon = target_areas(scores_path)
-    now = datetime.now()
     sess = requests.Session()
-    sess.headers["User-Agent"] = UA
+    sess.headers.update(HEADERS)
 
-    rows: list[dict] = []
-    fail = 0
-    for area, codes in area_to_sangwon.items():
-        try:
-            picks = scrape_area(area, now, sess)
-            fail = 0
-        except requests.RequestException as e:
-            fail += 1
-            print(f"[경고] {area} 수집 실패: {e}", file=sys.stderr)
-            if fail >= 3:
-                print("연속 실패 3회 — 요청 간격을 3초로 확대", file=sys.stderr)
-                SLEEP = 3.0
-            continue
-        rows += expand(area, codes, picks)
-        time.sleep(SLEEP)
-    return rows
+    seen_links = set()
+    seen_titles = set()
+    collected_articles = []
 
+    print(f"[스크래핑 시작] 대상: 서울 전체 음식점 관련 뉴스 (기간: {cutoff} ~ {now.strftime('%Y-%m-%d')})")
 
-def fallback_to_api(scores_path: str = "data/scores.csv") -> list[dict] | None:
-    """백업 경로(검색 API) 호출. 실패하면 None — 호출부가 주력 결과를 유지한다."""
-    try:
-        from scripts.collect_news import collect_all as collect_api
-    except ImportError as e:
-        print(f"[전환 실패] collect_news 임포트 불가: {e}", file=sys.stderr)
-        return None
-    try:
-        rows = collect_api(scores_path)
-    except Exception as e:                      # API 키 미설정·한도 초과 등
-        print(f"[전환 실패] 백업 경로 수집 오류: {e}", file=sys.stderr)
-        return None
-    print(f"[전환 완료] 백업 경로 수집 {len(rows)}건", file=sys.stderr)
-    return rows
+    for query in SEOUL_FOOD_QUERIES:
+        print(f"  -> 쿼리 검색 중: '{query}'")
+        for page in range(1, 3):  # 페이지별 검색
+            start = (page - 1) * 10 + 1
+            url = f"https://search.naver.com/search.naver?where=news&query={quote(query)}&sort=0&start={start}"
+            try:
+                r = sess.get(url, timeout=10)
+                if r.status_code != 200:
+                    continue
+                soup = BeautifulSoup(r.text, "html.parser")
 
+                links = [
+                    a["href"]
+                    for a in soup.find_all("a", href=True)
+                    if "news.naver.com/mnews/article/" in a["href"]
+                ]
 
-def smoke(area: str) -> int:
-    """단건 스모크 — 60개를 다 돌리고 0건을 확인하는 사이클을 3초로 줄인다.
-    **파일을 쓰지 않는다.**"""
-    sess = requests.Session()
-    sess.headers["User-Agent"] = UA
-    picks = scrape_area(area, datetime.now(), sess)
-    print(f"[{area}] {len(picks)}건")
-    for title, press, date, href in picks:
-        print(f"  {date} · {press} · {title}")
-        print(f"    {href}")
-    if not picks:
-        print("→ NEWS_DEBUG=1 로 다시 실행해 어느 단계에서 0이 되는지 확인", file=sys.stderr)
-    return 0
+                for link in links:
+                    if link in seen_links:
+                        continue
+                    seen_links.add(link)
+
+                    detail = parse_article_detail(link, sess, now, cutoff)
+                    if not detail:
+                        continue
+
+                    # 제목 중복 제거
+                    if detail["제목"] in seen_titles:
+                        continue
+                    seen_titles.add(detail["제목"])
+
+                    collected_articles.append(detail)
+                    time.sleep(0.1)
+
+            except Exception as e:
+                print(f"    [오류] {query} 페이지 {page} 수집 중 예외: {e}")
+                continue
+
+    # DataFrame 생성 및 정렬
+    df = pd.DataFrame(collected_articles, columns=["제목", "언론사", "날짜", "링크", "요약"])
+    if not df.empty:
+        df = df.sort_values(by="날짜", ascending=False).reset_index(drop=True)
+        # 최종 중복 제거 (링크, 제목)
+        df = df.drop_duplicates(subset=["링크"]).drop_duplicates(subset=["제목"]).reset_index(drop=True)
+
+    # 1. seoul_food_news.csv 저장
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+    # 2. data/news.csv (요약 제외 기본 버전)에도 저장
+    news_csv_path = "data/news.csv"
+    df[["제목", "언론사", "날짜", "링크"]].to_csv(news_csv_path, index=False, encoding="utf-8-sig")
+
+    print(f"\n[성공] 스크래핑 완료: 총 {len(df)}건의 고유 기사 저장 -> '{output_path}' 및 '{news_csv_path}'")
+    return df
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
-        return smoke(sys.argv[1])
+    df = scrape_seoul_food_news("data/seoul_food_news.csv")
+    if df.empty:
+        print("[경고] 수집된 기사가 없습니다.")
+        return 1
 
-    rows = collect_all()
-
-    # ── 백업 경로 자동 전환 (DEV_SPEC §4 아티팩트 3) ──────────────────
-    n_area = len({r["행정동_base"] for r in rows})
-    if n_area < MIN_AREAS:
-        print(f"⚠️ 스크래핑 확보 지역 {n_area}개 < {MIN_AREAS} — "
-              f"백업 경로(검색 API)로 자동 전환", file=sys.stderr)
-        api_rows = fallback_to_api()
-        if api_rows:
-            rows = api_rows
-        else:
-            print(f"백업 경로도 실패 — 스크래핑 결과 {len(rows)}건으로 저장",
-                  file=sys.stderr)
-
-    out = save(rows)
-    total = len(target_areas())
-    n_area = out["행정동_base"].nunique() if len(out) else 0
-    print(f"news.csv: {len(out):,}행 · 지역 {n_area}/{total} "
-          f"· 상권 {out['상권_코드'].nunique() if len(out) else 0}개 "
-          f"(확보율 {n_area/total:.0%})")
-    print("→ 검증: uv run python seams/check_news.py")
+    print("\n" + "=" * 90)
+    print(f"[서울 전체 음식점 관련 핵심 뉴스 수집 결과] (총 {len(df)}건)")
+    print("=" * 90)
+    for idx, row in df.iterrows():
+        print(f"[{idx+1:02d}] [{row['언론사']}] ({row['날짜']}) {row['제목']}")
+        print(f"     링크: {row['링크']}")
+        print(f"     요약: {row['요약'][:120]}...\n")
+    print("=" * 90)
     return 0
 
 
