@@ -19,13 +19,13 @@ except ImportError:
 
 
 TYPE_REASONS = {
-    "유입 집중형": "골목상권 중 유입강도가 상위 25%인 상권입니다.",
-    "청년 밀집형": "골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
-    "가족 주거형": "골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
-    "일반 주거·생활형": "골목상권 규칙 분류의 나머지 상권입니다.",
-    "발달상권형": "상권 구분이 발달상권으로 분류된 상권입니다.",
-    "전통시장형": "상권 구분이 전통시장으로 분류된 상권입니다.",
-    "관광특구형": "상권 구분이 관광특구로 분류된 상권입니다.",
+    "유입 집중형": "##### 골목상권 중 유입강도가 상위 25%인 상권입니다.",
+    "청년 밀집형": "##### 골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
+    "가족 주거형": "##### 골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
+    "일반 주거·생활형": "##### 골목상권 규칙 분류의 나머지 상권입니다.",
+    "발달상권형": "##### 상권 구분이 발달상권으로 분류된 상권입니다.",
+    "전통시장형": "##### 상권 구분이 전통시장으로 분류된 상권입니다.",
+    "관광특구형": "##### 상권 구분이 관광특구로 분류된 상권입니다.",
 }
 
 
@@ -41,6 +41,10 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
     return options.sort_values("label", kind="stable").reset_index(drop=True)
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/dev
 def render_detail_view(
     scores: pd.DataFrame,
     master: pd.DataFrame,
@@ -77,12 +81,11 @@ def render_detail_view(
     with type_col:
         st.metric("상권 유형", detail["유형"])
     with reason_col:
-        st.markdown("##### 판정 근거")
+        st.markdown("판정 근거")
         st.write(TYPE_REASONS.get(detail["유형"], "유형 판정 근거 정보가 없습니다."))
 
-    density_col, closure_col, sales_col = st.columns(3)
+    density_col, sales_col = st.columns(2)
     density_col.metric("공급밀도", f"{detail['공급밀도']:.3f}")
-    closure_col.metric("행정동 4분기 폐업률", f"{detail['행정동_폐업률']:.2f}%")
     sales_col.metric("당월 매출액", f"{detail['당월_매출_금액']:,}원")
     st.caption(
         f"동일 유형 중앙 공급밀도: {detail['동일유형_중앙_공급밀도']:.3f} (낮을수록 같은 유형 대비 공급 여유가 큼)"

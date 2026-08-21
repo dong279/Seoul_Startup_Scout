@@ -8,6 +8,12 @@
 각자 구현하면 한쪽만 고쳐지고, 두 경로의 스키마는 같은데 결과만 달라져
 게이트가 그 차이를 잡지 못한다.
 
+⚠️ **현재 이 경로는 키 미설정으로 동작하지 않는다.** `.env`에 키가 없으면
+`collect_all()`이 RuntimeError를 던지고 주력이 그 사실을 stderr에 남긴다
+(설계대로다 — 조용히 빈 결과를 돌려주면 전환 실패를 아무도 모른다).
+확보율이 부족해 백업이 실제로 필요해지면 ① 키를 발급하거나
+② 이 파일을 구글 뉴스 RSS 수집으로 교체한다. 둘 다 정본 개정 대상이다.
+
 사용:  NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 .env 에 두고
        uv run python scripts/collect_news.py     # 단독 실행 (파일까지 저장)
        또는 scrape_news.py 가 collect_all() 을 호출  # 자동 전환
@@ -26,7 +32,8 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.news_filter import (  # noqa: E402
-    DAYS, PER_AREA, clean, expand, press_of, relevance, save, target_areas,
+    DAYS, MIN_SCORE, PER_AREA, clean, expand, press_of, relevance, save,
+    target_areas,
 )
 
 SLEEP = 0.3               # API 호출 간격 (일 25,000건 한도 내 매너)
@@ -74,8 +81,8 @@ def collect_all(scores_path: str = "data/scores.csv") -> list[dict]:
             if pub < cutoff:                       # 2) 최근 90일만
                 continue
             score = relevance(area, title, desc)
-            if score == 0:                         # 3) 관련도 0점 탈락
-                continue
+            if score < MIN_SCORE:                  # 3) 관련도 하한 미달 탈락
+                continue                           #    (주력과 같은 값을 써야 한다)
             cands.append((score, pub, title, press,
                           item.get("link") or item["originallink"]))
         cands.sort(key=lambda x: (-x[0], -x[1].timestamp()))   # 4) 점수 → 최신순
