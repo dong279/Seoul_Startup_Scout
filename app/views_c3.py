@@ -13,9 +13,9 @@ import plotly.express as px
 import streamlit as st
 
 try:
-    from app.logic import detail_for, news_for
+    from app.logic import detail_for
 except ImportError:
-    from logic import detail_for, news_for
+    from logic import detail_for
 
 
 TYPE_REASONS = {
@@ -83,7 +83,7 @@ def render_detail_view(
 
     density_col, closure_col, sales_col = st.columns(3)
     density_col.metric("공급밀도", f"{detail['공급밀도']:.3f}")
-    closure_col.metric("행정동 4분기 폐업률", f"{detail['행정동_폐업률']:.2f}%")
+    closure_col.metric("행정동 외식 11종 4분기 누적 폐업률", f"{detail['행정동_폐업률']:.2f}%")
     sales_col.metric("당월 매출액", f"{detail['당월_매출_금액']:,}원")
     st.caption(
         f"동일 유형 중앙 공급밀도: {detail['동일유형_중앙_공급밀도']:.3f} (낮을수록 같은 유형 대비 공급 여유가 큼)"
