@@ -1,4 +1,4 @@
-"""상권 상세 패널(화면 ③) Streamlit 컴포넌트."""
+"""상권 상세 패널(화면 ③) 및 상권 뉴스 화면 Streamlit 컴포넌트."""
 from __future__ import annotations
 
 import sys
@@ -19,13 +19,13 @@ except ImportError:
 
 
 TYPE_REASONS = {
-    "유입 집중형": "##### 골목상권 중 유입강도가 상위 25%인 상권입니다.",
-    "청년 밀집형": "##### 골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
-    "가족 주거형": "##### 골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
-    "일반 주거·생활형": "##### 골목상권 규칙 분류의 나머지 상권입니다.",
-    "발달상권형": "##### 상권 구분이 발달상권으로 분류된 상권입니다.",
-    "전통시장형": "##### 상권 구분이 전통시장으로 분류된 상권입니다.",
-    "관광특구형": "##### 상권 구분이 관광특구로 분류된 상권입니다.",
+    "유입 집중형": "골목상권 중 유입강도가 상위 25%인 상권입니다.",
+    "청년 밀집형": "골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
+    "가족 주거형": "골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
+    "일반 주거·생활형": "골목상권 규칙 분류의 나머지 상권입니다.",
+    "발달상권형": "상권 구분이 발달상권으로 분류된 상권입니다.",
+    "전통시장형": "상권 구분이 전통시장으로 분류된 상권입니다.",
+    "관광특구형": "상권 구분이 관광특구로 분류된 상권입니다.",
 }
 
 
@@ -41,15 +41,13 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
     return options.sort_values("label", kind="stable").reset_index(drop=True)
 
 
-
 def render_detail_view(
     scores: pd.DataFrame,
     master: pd.DataFrame,
-    news: pd.DataFrame,
 ) -> None:
-    """화면 ③: 검토 후보 하나의 근거·인구·매출·뉴스 표시."""
+    """화면 ③: 검토 후보 하나의 근거·인구·매출 표시."""
     st.subheader("🏢 상권 상세 패널")
-    st.caption("검토 후보의 유형·공급 구조·인구·매출·최근 동향을 함께 확인합니다.")
+    st.caption("검토 후보의 유형·공급 구조·인구·매출 상세 현황을 확인합니다.")
 
     if scores.empty:
         st.info("상세 정보를 확인할 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
@@ -78,11 +76,12 @@ def render_detail_view(
     with type_col:
         st.metric("상권 유형", detail["유형"])
     with reason_col:
-        st.markdown("판정 근거")
+        st.markdown("##### 판정 근거")
         st.write(TYPE_REASONS.get(detail["유형"], "유형 판정 근거 정보가 없습니다."))
 
-    density_col, sales_col = st.columns(2)
+    density_col, closure_col, sales_col = st.columns(3)
     density_col.metric("공급밀도", f"{detail['공급밀도']:.3f}")
+    closure_col.metric("행정동 4분기 폐업률", f"{detail['행정동_폐업률']:.2f}%")
     sales_col.metric("당월 매출액", f"{detail['당월_매출_금액']:,}원")
     st.caption(
         f"동일 유형 중앙 공급밀도: {detail['동일유형_중앙_공급밀도']:.3f} (낮을수록 같은 유형 대비 공급 여유가 큼)"
@@ -111,3 +110,36 @@ def render_detail_view(
             use_container_width=True,
             hide_index=True,
         )
+
+
+def render_news_view(news: pd.DataFrame) -> None:
+    """화면: 수집된 최근 경제지 상권 기사 전체 목록 표시."""
+    st.subheader("📰 상권 경제지 기사 동향")
+    st.caption("서울 주요 상권 및 외식·창업 관련 최근 3개월 경제지 기사 모음입니다.")
+
+    if news.empty:
+        st.info("수집된 뉴스 데이터가 없습니다.")
+        return
+
+    # 중복 기사 제거 및 최신 날짜순 정렬
+    display_news = news.drop_duplicates(subset=["제목", "링크"]).sort_values("날짜", ascending=False)
+
+    st.markdown(f"총 **{len(display_news):,}건**의 상권 관련 경제지 기사")
+    st.divider()
+
+    for _, article in display_news.iterrows():
+        title = str(article.get("제목", ""))
+        press = str(article.get("언론사", ""))
+        published_at = str(article.get("날짜", ""))
+        area = str(article.get("행정동_base", ""))
+        link = article.get("링크", "")
+
+        text_col, link_col = st.columns([5, 1])
+        with text_col:
+            st.markdown(f"**{title}**")
+            caption_parts = [p for p in [press, published_at, f"🏷️ {area}" if (area and area != "nan") else ""] if p]
+            st.caption(" · ".join(caption_parts))
+        with link_col:
+            if pd.notna(link) and str(link).strip():
+                st.link_button("기사 보기", str(link), use_container_width=True)
+        st.divider()

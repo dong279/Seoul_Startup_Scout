@@ -1,11 +1,11 @@
 """app/main.py — 대시보드 메인 엔트리포인트
 
-탐색 모드 3종: 📍 입지 탐색(업종→상권) / ☕ 업종 후보 확인(상권→업종) / 📊 종합 분석.
+탐색 모드 4종: 📊 종합 분석 / 📰 상권 뉴스 / 📍 입지 탐색 / ☕ 업종 후보 확인
 DEV_SPEC §6 준수: 종합 분석 모드에서 사이드바 조건 변경 시 목록/산점도/지표 동시 갱신.
-탐색 모드는 사이드바를 그리지 않아 화면 내 선택과 조건이 충돌하지 않는다.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,7 +27,7 @@ try:
         summary,
     )
     from app.views_c2 import render_reverse_view, render_scatter_view
-    from app.views_c3 import render_detail_view
+    from app.views_c3 import render_detail_view, render_news_view
     from app.views_forward import render_forward_view
 except ImportError:
     from logic import (
@@ -39,7 +39,7 @@ except ImportError:
         summary,
     )
     from views_c2 import render_reverse_view, render_scatter_view
-    from views_c3 import render_detail_view
+    from views_c3 import render_detail_view, render_news_view
     from views_forward import render_forward_view
 
 st.set_page_config(page_title="서울 창업 입지 탐색기", page_icon="🧭", layout="wide")
@@ -51,33 +51,43 @@ def get_data():
     df_sc = None
     for path in ["data/scores.csv", "data/mock/scores.csv"]:
         try:
-            df_sc = load_scores(path)
-            if not df_sc.empty:
-                break
+            if os.path.exists(path):
+                df_sc = load_scores(path)
+                if not df_sc.empty:
+                    break
         except Exception:
             continue
-    if df_sc is None:
+    if df_sc is None or df_sc.empty:
         df_sc = load_scores("data/mock/scores.csv")
 
-    # 2. news 로드
+    # 2. news 로드 (실제 크롤링 파일들을 최우선으로 탐색)
     df_nw = None
-    for path in ["data/news.csv", "data/mock/news.csv"]:
+    news_candidates = [
+        "data/seoul_food_news.csv",
+        "data/news.csv",
+        "data/unique_news.csv",
+        "data/mock/news.csv",
+    ]
+    for path in news_candidates:
         try:
-            df_nw = load_news(path)
-            if not df_nw.empty:
-                break
+            if os.path.exists(path):
+                temp_df = load_news(path)
+                if not temp_df.empty:
+                    df_nw = temp_df
+                    break
         except Exception:
             continue
-    if df_nw is None:
+    if df_nw is None or df_nw.empty:
         df_nw = load_news("data/mock/news.csv")
 
     # 3. master 로드
     df_ma = None
     for path in ["data/master.csv", "data/mock/master.csv"]:
         try:
-            df_ma = load_master(path)
-            if not df_ma.empty:
-                break
+            if os.path.exists(path):
+                df_ma = load_master(path)
+                if not df_ma.empty:
+                    break
         except Exception:
             continue
     if df_ma is None:
@@ -91,24 +101,22 @@ df_raw, df_news, df_master = get_data()
 st.title("🧭 서울 창업 입지 탐색기 (Seoul Startup Scout)")
 st.caption("서울시 상권 데이터 기반 공급 부족 & 안정성 기반 창업 검토 후보 탐색")
 
-# ── 탐색 모드 ────────────────────────────────────────────────────────
-# st.tabs는 활성 탭을 파이썬 쪽에서 알 수 없어 탭별로 사이드바를 제어할 수 없다.
-# 모드를 단일 선택으로 두면 각 모드가 자기 조건 위젯만 그리므로, 탐색 모드에서
-# 사이드바 필터와 화면 내 선택이 서로 모순되는 구간이 생기지 않는다(§6 연동 원칙).
+# ── 탐색 모드 순서 (종합분석 바로 옆에 상권 뉴스 배치) ──────────────
+MODE_ANALYSIS = "📊 종합 분석"
+MODE_NEWS = "📰 상권 뉴스"
 MODE_FORWARD = "📍 입지 탐색"
 MODE_REVERSE = "☕ 업종 후보 확인"
-MODE_ANALYSIS = "📊 종합 분석"
 
 mode = st.radio(
     "탐색 모드",
-    [MODE_FORWARD, MODE_REVERSE, MODE_ANALYSIS],
+    [MODE_ANALYSIS, MODE_NEWS, MODE_FORWARD, MODE_REVERSE],
     horizontal=True,
     label_visibility="collapsed",
 )
 st.divider()
 
 if mode == MODE_ANALYSIS:
-    # 사이드바는 이 모드에서만 그린다 — 다른 모드에서는 호출 자체를 하지 않는다.
+    # 사이드바는 종합 분석 모드에서만 활성화
     st.sidebar.header("🔍 탐색 조건 설정")
 
     w_gap = st.sidebar.slider("공급갭 가중치", 0.0, 1.0, 0.6, 0.05)
@@ -149,25 +157,27 @@ if mode == MODE_ANALYSIS:
         if df_filtered.empty:
             st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
         else:
-            disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수"]
+            disp_cols = [
+                "상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명",
+                "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수",
+            ]
             st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
 
     with tab2:
         render_scatter_view(df_filtered, df_master)
 
     with tab3:
-        render_detail_view(df_filtered, df_master, df_news)
+        render_detail_view(df_filtered, df_master)
 
-else:
-    # 탐색 모드는 슬라이더를 두지 않는다 — DEV_SPEC §5-6 확정 가중치(0.6:0.4)를 쓴다.
+elif mode == MODE_NEWS:
+    render_news_view(df_news)
+
+elif mode == MODE_FORWARD:
     df_rescored = rescore(df_raw)
+    render_forward_view(df_rescored)
+    st.caption("종합점수는 DEV_SPEC §5-6 확정 기본 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다.")
 
-    if mode == MODE_FORWARD:
-        render_forward_view(df_rescored)
-    else:
-        render_reverse_view(df_rescored)
-
-    st.caption(
-        "종합점수는 DEV_SPEC §5-6 확정 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다. "
-        "가중치를 직접 조정하려면 상단에서 **📊 종합 분석** 모드를 선택하세요."
-    )
+elif mode == MODE_REVERSE:
+    df_rescored = rescore(df_raw)
+    render_reverse_view(df_rescored)
+    st.caption("종합점수는 DEV_SPEC §5-6 확정 기본 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다.")
