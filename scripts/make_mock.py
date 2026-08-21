@@ -68,9 +68,13 @@ def make_scores(rng: np.random.Generator) -> pd.DataFrame:
     df.loc[2:5, "행정동_폐업률"] = df.loc[2, "행정동_폐업률"]  # 동점 — 정렬 안정성 시험
 
     mm = lambda s: (s - s.min()) / (s.max() - s.min())   # noqa: E731
-    df["갭점수"] = mm(df["공급갭"])
-    df["안정성점수"] = 1 - mm(df["행정동_폐업률"])        # 방향 반전 (§5-5)
-    df["종합점수"] = 0.6 * df["갭점수"] + 0.4 * df["안정성점수"]
+    # build_scores.py 와 **같은 자리에서 같은 자릿수로** 반올림한다.
+    # 여기서 안 맞추면 check_app 의 "기본 가중치 재계산 == 파일값" 검사가
+    # 5e-05 오차로 red가 난다 — 로직이 틀린 게 아니라 가데이터가 틀린 것인데,
+    # 게이트 출력만 보면 build_scores 가 의심받는다.
+    df["갭점수"] = mm(df["공급갭"]).round(4)
+    df["안정성점수"] = (1 - mm(df["행정동_폐업률"])).round(4)   # 방향 반전 (§5-5)
+    df["종합점수"] = (0.6 * df["갭점수"] + 0.4 * df["안정성점수"]).round(4)
     return df
 
 
