@@ -19,13 +19,13 @@ except ImportError:
 
 
 TYPE_REASONS = {
-    "유입 집중형": "골목상권 중 유입강도가 상위 25%인 상권입니다.",
-    "청년 밀집형": "골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
-    "가족 주거형": "골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
-    "일반 주거·생활형": "골목상권 규칙 분류의 나머지 상권입니다.",
-    "발달상권형": "상권 구분이 발달상권으로 분류된 상권입니다.",
-    "전통시장형": "상권 구분이 전통시장으로 분류된 상권입니다.",
-    "관광특구형": "상권 구분이 관광특구로 분류된 상권입니다.",
+    "유입 집중형": "##### 골목상권 중 유입강도가 상위 25%인 상권입니다.",
+    "청년 밀집형": "##### 골목상권 중 유입강도 25~75% 구간이면서 청년비율이 상위 25%인 상권입니다.",
+    "가족 주거형": "##### 골목상권 중 유입강도가 하위 50%이고 가구당인구가 상위 50%인 상권입니다.",
+    "일반 주거·생활형": "##### 골목상권 규칙 분류의 나머지 상권입니다.",
+    "발달상권형": "##### 상권 구분이 발달상권으로 분류된 상권입니다.",
+    "전통시장형": "##### 상권 구분이 전통시장으로 분류된 상권입니다.",
+    "관광특구형": "##### 상권 구분이 관광특구로 분류된 상권입니다.",
 }
 
 
@@ -40,27 +40,6 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
     )
     return options.sort_values("label", kind="stable").reset_index(drop=True)
 
-
-def _render_news(articles: pd.DataFrame) -> None:
-    """최근 기사 최대 3건을 빈 상태까지 포함해 표시한다."""
-    st.subheader("📰 최근 3개월 경제지 기사")
-    if articles.empty:
-        st.info("최근 3개월 관련 기사 없음")
-        return
-
-    for _, article in articles.iterrows():
-        title = str(article["제목"])
-        press = str(article["언론사"])
-        published_at = str(article["날짜"])
-        link = article["링크"]
-
-        text_col, link_col = st.columns([5, 1])
-        with text_col:
-            st.markdown(f"**{title}**")
-            st.caption(f"{press} · {published_at}")
-        with link_col:
-            if pd.notna(link) and str(link).strip():
-                st.link_button("기사 보기", str(link), use_container_width=True)
 
 
 def render_detail_view(
@@ -99,7 +78,7 @@ def render_detail_view(
     with type_col:
         st.metric("상권 유형", detail["유형"])
     with reason_col:
-        st.markdown("##### 판정 근거")
+        st.markdown("판정 근거")
         st.write(TYPE_REASONS.get(detail["유형"], "유형 판정 근거 정보가 없습니다."))
 
     density_col, closure_col, sales_col = st.columns(3)
@@ -133,5 +112,3 @@ def render_detail_view(
             use_container_width=True,
             hide_index=True,
         )
-
-    _render_news(news_for(news, selected["상권_코드"], n=3))
