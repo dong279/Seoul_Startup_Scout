@@ -24,10 +24,13 @@ uv run python seams/check_master.py      # → OK 확인
 uv run python scripts/build_scores.py
 uv run python seams/check_scores.py      # → OK 확인
 
-# 4. 뉴스 수집 (requests + BeautifulSoup)
+# 4. 뉴스 수집 (requests + BeautifulSoup · 서울 전체 외식/창업 주제 8종)
 uv run python scripts/scrape_news.py
 uv run python seams/check_news.py        # → OK 확인
-#    확보 지역 20개 미만이면 검색 API 백업 경로로 자동 전환 (.env 에 키 필요)
+#    ⚠️ 게이트는 형식만 본다. 기사가 쓸모 있는지는 사람이 목록을 봐야 한다 (DEV_SPEC §4-3f)
+uv run python -c "import pandas as pd; d=pd.read_csv('data/news.csv',encoding='utf-8-sig'); print(d.drop_duplicates('제목')[['행정동_base','언론사','날짜','제목']].to_string())"
+#    수집이 0건이거나 이상하면: uv run python scripts/debug_scrape.py [검색어]
+#    확보 기사 5건 미만이면 검색 API 백업 경로로 자동 전환 (.env 에 키 필요)
 
 # 5. 참고 지표 (선택 — 없으면 상세 패널의 해당 영역만 비워진다)
 uv run python scripts/build_trend.py
@@ -50,7 +53,7 @@ uv run python seams/check_app.py data/mock/scores.csv data/mock/news.csv
 data/raw/ (CSV 7종, cp949)
    → build_master.py   → master.csv          (106,337행 × 77컬럼 · 상권 1,558 · 업종 62)
    → build_scores.py   → scores.csv          (후보 3,443건 · 유형 7종 · 업종 11종 · 상권 1,339)
-   → scrape_news.py    → news.csv            (후보 상권 최근 3개월 경제지 기사, bs4)
+   → scrape_news.py    → news.csv            (서울 외식·창업 최근 3개월 경제지 기사, bs4)
    → build_trend.py    → industry_trend.csv  (업종 11종 × 5분기 = 55행, 참고 표시용)
    → app/main.py       (Streamlit)
 ```
@@ -84,7 +87,7 @@ data/raw/ (CSV 7종, cp949)
 ├── config/업종_whitelist.csv   분석 업종 11종 (모든 지표 계산의 적용 대상)
 ├── common/                loader(원본 읽기 단일 창구) · viz(폰트·팔레트)
 ├── scripts/               build_master · build_scores · build_trend
-│                          scrape_news(주력) · collect_news(백업) · news_filter(공유 필터)
+│                          scrape_news(주력) · collect_news(백업) · news_filter(주제+공유 필터) · debug_scrape(진단)
 │                          make_mock(가데이터 생성)
 ├── seams/                 검증 게이트 4종 — master · scores · news · app (수정은 팀장 전담)
 ├── notebooks/             EDA (pandas + seaborn/matplotlib)

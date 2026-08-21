@@ -2,10 +2,17 @@
 
 requests + BeautifulSoup으로 네이버 뉴스 검색 결과를 수집한다.
 
-1일차 스파이크에서 확인된 문제와 해결:
-  - 초기 셀렉터가 기사 제목 대신 "네이버뉴스" 버튼 라벨을 잡음 (44건 전부 동일 문자열)
-  → 클래스명이 아니라 **구조 기반**으로 재설계: 제목은 경제지 도메인을 가리키는 링크 중
-    텍스트 길이가 MIN_TITLE_LEN 이상인 a 태그로 판별한다.
+3일차 실측에서 확인된 문제와 해결 (v6):
+  - 초기 403은 **IP 차단**이었다 (PC 변경 후 HTTP 200 정상). 셀렉터 문제가 아니었다.
+  - 남은 0건의 원인은 파싱 두 곳:
+    ① `a.find_parent(["li","div"])`가 '가장 가까운' 부모를 잡는데 날짜는 그보다
+       위 카드 루트에 있다 → `parse_date`가 전건 None → 계약(날짜 불명은 탈락)대로
+       모두 버려졌다. `card_root()`로 날짜가 나올 때까지 최대 4단계 거슬러 올라간다.
+    ② 네이버 카드는 **제목과 요약이 같은 URL을 가리키는 별개의 `<a>`** 다. a 태그를
+       하나씩 순회하면 한 기사가 두 행이 되고, 요약문이 `제목` 컬럼에 들어간다.
+       → href로 먼저 묶고(`groups`) 그룹의 첫 링크만 제목으로 쓴다.
+    ③ 화면용으로 잘린 텍스트 대신 `a["title"]` 속성의 원본 제목을 쓰고,
+       접근성 숨김 텍스트('새 창 열림' 등)를 꼬리에서 제거한다.
 
 정밀도 필터는 여기서 구현하지 않는다 — `news_filter.py`를 백업 경로와 **공유**한다.
 각자 구현하면 한쪽만 고쳐지고, 두 경로의 스키마는 같은데 결과만 달라져
@@ -18,7 +25,9 @@ requests + BeautifulSoup으로 네이버 뉴스 검색 결과를 수집한다.
 MIN_AREAS 미만이면 `collect_news.collect_all()`을 자동 호출하고 stderr에 기록한다.
 사람의 판단에 걸어두면 마감 직전에 전환이 일어나지 않는다.
 
-사용:  uv run python scripts/scrape_news.py
+사용:  uv run python scripts/scrape_news.py            # 전량 수집 → 저장
+       uv run python scripts/scrape_news.py 망원동      # 단건 스모크 (저장 안 함)
+       NEWS_DEBUG=1 uv run python scripts/scrape_news.py 망원동   # 단계별 카운터
 출력:  data/news.csv (상권_코드, 행정동_base, 제목, 언론사, 날짜, 링크)
 """
 from __future__ import annotations
@@ -27,6 +36,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
@@ -35,8 +45,8 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.news_filter import (  # noqa: E402
-    DAYS, MIN_AREAS, MIN_TITLE_LEN, PER_AREA, clean, expand, press_of,
-    relevance, save, target_areas,
+    DAYS, MIN_AREAS, MIN_SCORE, MIN_TITLE_LEN, PER_AREA, clean, expand,
+    press_of, relevance, save, target_areas,
 )
 
 SLEEP = 1.0                       # 요청 간 최소 간격 (매너)
@@ -44,6 +54,15 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 REL_DATE = re.compile(r"(\d+)(분|시간|일|주)\s*전")
+
+# 기사가 아닌 네이버 내부 링크 — 디버그 표본에서 실제로 잡힌 것들
+SKIP = re.compile(r"//(keep|mkt|blog|cafe|shopping|search)\.naver\.com"
+                  r"|/main/static/")
+# 접근성 숨김 텍스트가 제목 꼬리에 붙는다 ("… 새 창 열림")
+TAIL = re.compile(r"\s*(새 창 열림|네이버뉴스|언론사 선정|전체 기사 보기"
+                  r"|본문 듣기|다른 기사 보기)\s*$")
+CARD_MAX_LEN = 1200               # 이보다 크면 결과 목록 전체 — 옆 기사 날짜를 집는다
+CARD_MAX_UP = 4                   # 카드 루트를 찾아 올라갈 최대 단계
 
 
 def parse_date(text: str, now: datetime) -> str | None:
@@ -65,41 +84,93 @@ def parse_date(text: str, now: datetime) -> str | None:
     return None
 
 
+def strip_tail(s: str) -> str:
+    """제목 꼬리의 접근성 숨김 텍스트를 반복 제거한다 (두 개가 겹쳐 붙기도 한다)."""
+    prev = None
+    while prev != s:
+        prev, s = s, TAIL.sub("", s).strip()
+    return s
+
+
+def card_root(a, now: datetime):
+    """날짜 문자열이 나올 때까지 부모를 거슬러 올라가 기사 카드를 찾는다.
+
+    `find_parent(["li","div"])`는 '가장 가까운' 부모라 제목만 감싼 래퍼를 잡는다.
+    날짜는 그보다 위에 있어서 `parse_date`가 전건 None을 돌려주고, 계약상
+    '날짜 불명은 탈락'이므로 조용히 전부 버려진다 — 3일차 0건의 주원인.
+    """
+    node = a
+    for _ in range(CARD_MAX_UP):
+        node = node.parent
+        if node is None:
+            return None
+        text = node.get_text(" ", strip=True)
+        if len(text) > CARD_MAX_LEN:      # 목록 전체로 올라갔다 — 옆 기사 날짜 오염
+            return None
+        if parse_date(text, now):
+            return node
+    return None
+
+
 def scrape_area(area: str, now: datetime, sess: requests.Session) -> list[tuple]:
     """한 지역의 검색 첫 페이지에서 (제목, 언론사, 날짜, 링크) 상위 3건을 뽑는다."""
     since = (now - timedelta(days=DAYS)).strftime("%Y.%m.%d")
     until = now.strftime("%Y.%m.%d")
     url = ("https://search.naver.com/search.naver?where=news&sm=tab_opt"
            f"&query={quote(f'서울 {area} 상권')}"
-           f"&pd=3&ds={since}&de={until}&sort=1")   # pd=3: 기간 직접 지정, sort=1: 최신순
+           f"&pd=3&ds={since}&de={until}&sort=1")   # pd=3: 기간 지정, sort=1: 최신순
     r = sess.get(url, timeout=10)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
     cutoff = (now - timedelta(days=DAYS)).strftime("%Y-%m-%d")
-    out = []
-    # 구조 기반 판별: 뉴스 기사 블록의 제목 링크는
-    #  ① href가 경제지 원문 도메인을 가리키고
-    #  ② 링크 텍스트가 실제 제목이다 ← "네이버뉴스"(6자) 버튼 라벨이 걸러지는 지점
-    for a in soup.find_all("a", href=True):
-        href, title = a["href"], clean(a.get_text(" ", strip=True))
-        if len(title) < MIN_TITLE_LEN:           # 버튼 라벨·언론사명 제외
-            continue
-        press = press_of(href)
-        if press is None:                        # 1) 경제지만
-            continue
-        block = a.find_parent(["li", "div"])
-        texts = block.get_text(" ", strip=True) if block else ""
-        desc = clean(texts.replace(title, " ")[:200])
-        date = parse_date(texts, now)
-        if date is None or date < cutoff:        # 2) 날짜 불명·90일 초과 탈락
-            continue
-        score = relevance(area, title, desc)
-        if score == 0:                           # 3) 관련도 0 탈락
-            continue
-        out.append((score, date, title, press, href))
 
-    # 같은 제목 중복 제거 (원문/네이버뉴스 이중 링크 대비)
+    # ── 1) 경제지 화이트리스트 + href로 묶기 ────────────────────────────
+    # 네이버 카드는 제목과 요약이 같은 URL을 가리키는 별개의 <a>다.
+    # 묶지 않으면 한 기사가 두 행이 되고 요약문이 제목 컬럼에 들어간다.
+    groups: dict[str, list] = {}
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http") or SKIP.search(href):
+            continue
+        if press_of(href) is None:
+            continue
+        groups.setdefault(href, []).append(a)
+
+    stat = Counter({"경제지": len(groups)})
+    out = []
+    for href, tags in groups.items():
+        head = tags[0]                    # 문서 순서상 첫 링크가 제목
+        # 화면용으로 잘린 텍스트 대신 title 속성의 원본 제목을 우선한다
+        title = clean(strip_tail(head.get("title")
+                                 or head.get_text(" ", strip=True)))
+        if len(title) < MIN_TITLE_LEN:    # 버튼 라벨·언론사명 제외
+            continue
+        stat["제목"] += 1
+
+        block = card_root(head, now)
+        texts = block.get_text(" ", strip=True) if block else ""
+        date = parse_date(texts, now)
+        if date is None or date < cutoff:  # 2) 날짜 불명·90일 초과 탈락
+            continue
+        stat["날짜"] += 1
+
+        # 요약은 같은 카드의 나머지 링크에서 — 없으면 카드 텍스트에서 제목을 뺀 나머지
+        desc = clean(strip_tail(" ".join(t.get_text(" ", strip=True)
+                                         for t in tags[1:])))
+        if not desc:
+            desc = clean(texts.replace(title, " ")[:200])
+
+        score = relevance(area, title, desc)
+        if score < MIN_SCORE:              # 3) 관련도 하한 미달 탈락
+            continue
+        stat["관련도"] += 1
+        out.append((score, date, title, press_of(href), href))
+
+    if os.getenv("NEWS_DEBUG"):
+        print(f"  [{area}] {dict(stat)}", file=sys.stderr)
+
+    # 같은 제목 중복 제거 (원문 링크와 네이버 인링크가 별개 URL인 경우 대비)
     seen, dedup = set(), []
     for row in out:
         if row[2] in seen:
@@ -154,7 +225,25 @@ def fallback_to_api(scores_path: str = "data/scores.csv") -> list[dict] | None:
     return rows
 
 
+def smoke(area: str) -> int:
+    """단건 스모크 — 60개를 다 돌리고 0건을 확인하는 사이클을 3초로 줄인다.
+    **파일을 쓰지 않는다.**"""
+    sess = requests.Session()
+    sess.headers["User-Agent"] = UA
+    picks = scrape_area(area, datetime.now(), sess)
+    print(f"[{area}] {len(picks)}건")
+    for title, press, date, href in picks:
+        print(f"  {date} · {press} · {title}")
+        print(f"    {href}")
+    if not picks:
+        print("→ NEWS_DEBUG=1 로 다시 실행해 어느 단계에서 0이 되는지 확인", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1:
+        return smoke(sys.argv[1])
+
     rows = collect_all()
 
     # ── 백업 경로 자동 전환 (DEV_SPEC §4 아티팩트 3) ──────────────────

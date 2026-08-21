@@ -22,6 +22,8 @@ Streamlit 대시보드. **계약 정본은 `DEV_SPEC.md`** — 이 파일과 충
 - uv run python seams/check_master.py   # data/master.csv
 - uv run python seams/check_scores.py   # data/scores.csv (공급갭>0 후보만 담김)
 - uv run python seams/check_news.py     # data/news.csv (0행이면 red, 일부 상권 미보유는 정상)
+  ⚠️ check_news는 **형식만** 검사한다 (제목 길이·도메인·기간·조인 키).
+  기사가 쓸모 있는지는 못 잡으므로 **수집 후 사람이 목록을 눈으로 본다** (DEV_SPEC §4-3f)
 - uv run python seams/check_app.py      # app/logic.py 계약 (화면이 아니라 로직)
 
 ## 금지
@@ -29,6 +31,11 @@ Streamlit 대시보드. **계약 정본은 `DEV_SPEC.md`** — 이 파일과 충
 - **app/logic.py 에 streamlit import 금지** — 위젯·레이아웃은 app/main.py 에만
 - **common/viz.py 는 B·C조 공유 파일 — 오너 1인만 수정** (다른 조는 요청)
 - 뉴스 수집 주력은 scripts/scrape_news.py (requests+bs4). collect_news.py는 API 백업 —
-  주력/백업을 임의로 바꾸지 말 것 (전환은 수집 지역 수 미달 시 코드가 자동으로 한다)
+  주력/백업을 임의로 바꾸지 말 것 (전환은 확보 기사 5건 미달 시 코드가 자동으로 한다)
+- **뉴스 검색 단위는 서울 전체 · 외식/창업 주제 8종** (DEV_SPEC §4-3a). `행정동_base`에는
+  행정동명이 아니라 수집 주제가 들어간다. 행정동 단위로 되돌리지 말 것 — 요청 342회로
+  403 차단을 부르고 정밀도도 절반이었다
+- 뉴스 필터 사전(STARTUP/FOOD/NOISE/OTHER_REGION)을 조인 뒤에는 **확보 기사 수가
+  MIN_ARTICLES 아래로 떨어지지 않았는지 확인** — 정밀도와 확보량은 맞바꾸는 관계다
 - 자기 조 오너십 밖 파일 수정 금지
 - git commit·push 금지 — 커밋·push·머지는 전부 사람이 직접 (에이전트는 파일 수정까지만)
