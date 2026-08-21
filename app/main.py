@@ -5,6 +5,7 @@ DEV_SPEC §6 준수: 종합 분석 모드에서 사이드바 조건 변경 시 �
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -50,33 +51,43 @@ def get_data():
     df_sc = None
     for path in ["data/scores.csv", "data/mock/scores.csv"]:
         try:
-            df_sc = load_scores(path)
-            if not df_sc.empty:
-                break
+            if os.path.exists(path):
+                df_sc = load_scores(path)
+                if not df_sc.empty:
+                    break
         except Exception:
             continue
-    if df_sc is None:
+    if df_sc is None or df_sc.empty:
         df_sc = load_scores("data/mock/scores.csv")
 
-    # 2. news 로드
+    # 2. news 로드 (실제 크롤링 파일들을 최우선으로 탐색)
     df_nw = None
-    for path in ["data/news.csv", "data/mock/news.csv"]:
+    news_candidates = [
+        "data/seoul_food_news.csv",
+        "data/news.csv",
+        "data/unique_news.csv",
+        "data/mock/news.csv",
+    ]
+    for path in news_candidates:
         try:
-            df_nw = load_news(path)
-            if not df_nw.empty:
-                break
+            if os.path.exists(path):
+                temp_df = load_news(path)
+                if not temp_df.empty:
+                    df_nw = temp_df
+                    break
         except Exception:
             continue
-    if df_nw is None:
+    if df_nw is None or df_nw.empty:
         df_nw = load_news("data/mock/news.csv")
 
     # 3. master 로드
     df_ma = None
     for path in ["data/master.csv", "data/mock/master.csv"]:
         try:
-            df_ma = load_master(path)
-            if not df_ma.empty:
-                break
+            if os.path.exists(path):
+                df_ma = load_master(path)
+                if not df_ma.empty:
+                    break
         except Exception:
             continue
     if df_ma is None:
@@ -105,6 +116,7 @@ mode = st.radio(
 st.divider()
 
 if mode == MODE_ANALYSIS:
+    # 사이드바는 종합 분석 모드에서만 활성화
     st.sidebar.header("🔍 탐색 조건 설정")
 
     w_gap = st.sidebar.slider("공급갭 가중치", 0.0, 1.0, 0.6, 0.05)
