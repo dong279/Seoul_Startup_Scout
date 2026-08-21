@@ -23,82 +23,91 @@ except ImportError:
 SAFE_COLORS = {**TYPE_COLORS, "유입 집중형": "#2E5C8A"}
 
 
-def render_scatter_view(df: pd.DataFrame) -> None:
-    """화면 ② 상권 포지셔닝 산점도 (메인 시각화)"""
-    st.subheader("📊 상권 포지셔닝 산점도")
-    st.caption("유효수요 대비 점포당 매출을 비교하여 검토 후보 상권의 시장 기회 영역(4사분면)을 탐색합니다.")
+def render_scatter_view(df: pd.DataFrame, master_df: pd.DataFrame) -> None:
+    """분석 노트북 기준의 업종별 개업률·폐업률 산점도를 표시한다."""
+    st.subheader("업종별 개업률 vs 폐업률")
+    st.caption("점은 업종별 평균이며, 점 크기는 전체 점포 수를 의미합니다. 기준선은 현재 선택된 업종의 평균입니다.")
 
+    required = {"상권_코드", "서비스_업종_코드_명", "개업_율", "폐업_률", "전체_점포_수"}
     if df.empty:
-        st.warning("⚠️ 선택된 조건에 해당하는 검토 후보 상권이 없습니다. 사이드바 필터 조건을 완화해 주세요.")
+        st.warning("선택한 조건에 해당하는 후보 상권이 없습니다. 사이드바 필터를 조정해 주세요.")
+        return
+    if not required.issubset(master_df.columns):
+        st.error("업종별 개업률·폐업률 산점도에 필요한 원본 데이터 컬럼이 없습니다.")
         return
 
-    plot_df = df.copy()
-    plot_df["유효수요"] = plot_df.apply(
-        lambda r: (r["전체_점포_수"] / r["공급밀도"]) if r["공급밀도"] > 0 else 0, axis=1
+    selected_pairs = df[["상권_코드", "서비스_업종_코드_명"]].drop_duplicates()
+    source_df = master_df.merge(
+        selected_pairs,
+        on=["상권_코드", "서비스_업종_코드_명"],
+        how="inner",
     )
-    plot_df["점포당_매출"] = plot_df.apply(
-        lambda r: (r["당월_매출_금액"] / r["전체_점포_수"]) if r["전체_점포_수"] > 0 else 0, axis=1
-    )
+    if source_df.empty:
+        st.warning("선택한 후보에 연결된 개업률·폐업률 원본 데이터가 없습니다.")
+        return
 
-    med_x = plot_df["유효수요"].median()
-    med_y = plot_df["점포당_매출"].median()
+    industry_scatter = (
+        source_df.groupby("서비스_업종_코드_명", as_index=False)[["개업_율", "폐업_률", "전체_점포_수"]]
+        .mean()
+        .sort_values("폐업_률", ascending=False)
+    )
+    x_mean = industry_scatter["개업_율"].mean()
+    y_mean = industry_scatter["폐업_률"].mean()
 
     fig = px.scatter(
-        plot_df,
-        x="유효수요",
-        y="점포당_매출",
+        industry_scatter,
+        x="개업_율",
+        y="폐업_률",
         size="전체_점포_수",
-        color="유형",
-        hover_name="상권_코드_명",
+        color="서비스_업종_코드_명",
+        text="서비스_업종_코드_명",
+        size_max=58,
+        color_discrete_sequence=px.colors.qualitative.Safe,
+        hover_name="서비스_업종_코드_명",
         hover_data={
-            "서비스_업종_코드_명": True,
-            "종합점수": ":.3f",
-            "공급갭": ":.3f",
-            "행정동_폐업률": ":.2f",
-            "유효수요": ":,.1f",
-            "점포당_매출": ":,.0f",
-            "전체_점포_수": True,
-            "유형": False,
+            "개업_율": ":.2f",
+            "폐업_률": ":.2f",
+            "전체_점포_수": ":,.0f",
+            "서비스_업종_코드_명": False,
         },
-        color_discrete_map=SAFE_COLORS,
         labels={
-            "유효수요": "유효수요 (상주·직장·유동 정규화합 역산)",
-            "점포당_매출": "점포당 평균 매출액 (원)",
-            "전체_점포_수": "점포 수",
-            "유형": "상권 유형",
+            "개업_율": "개업률 (%)",
+            "폐업_률": "폐업률 (%)",
+            "전체_점포_수": "전체 점포 수",
+            "서비스_업종_코드_명": "업종",
         },
         template="plotly_white",
     )
-
-    fig.add_vline(x=med_x, line_dash="dash", line_color="gray", annotation_text="수요 중앙값", annotation_position="top left")
-    fig.add_hline(y=med_y, line_dash="dash", line_color="gray", annotation_text="매출 중앙값", annotation_position="bottom right")
-
-    fig.add_annotation(
-        xref="paper", yref="paper",
-        x=0.98, y=0.05,
-        text="<b>💡 기회 영역</b><br>수요 높음 × 점포당 매출 낮음",
-        showarrow=False,
-        bgcolor="rgba(255, 235, 235, 0.85)",
-        bordercolor="#D94F4F",
-        borderwidth=1,
-        align="right",
+    fig.update_traces(
+        marker={"line": {"color": "#333333", "width": 1.1}, "opacity": 0.85},
+        textposition="top center",
     )
-
+    fig.add_vline(
+        x=x_mean, line_dash="dash", line_color="#E53935",
+        annotation_text=f"개업률 평균 ({x_mean:.1f}%)", annotation_position="top left",
+    )
+    fig.add_hline(
+        y=y_mean, line_dash="dash", line_color="#4B5563",
+        annotation_text=f"폐업률 평균 ({y_mean:.1f}%)", annotation_position="bottom right",
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0.98, y=0.98,
+        text="<b>고개업 · 고폐업</b><br>레드오션(고위험 시장)",
+        showarrow=False, align="right", bgcolor="rgba(255, 235, 235, 0.85)",
+        bordercolor="#E53935", borderwidth=1,
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0.98, y=0.04,
+        text="<b>고개업 · 저폐업</b><br>성장 확장형 시장",
+        showarrow=False, align="right", bgcolor="rgba(235, 248, 255, 0.85)",
+        bordercolor="#2B5C8F", borderwidth=1,
+    )
     fig.update_layout(
-        height=580,
+        height=620,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=20, r=20, t=40, b=20),
+        margin=dict(l=20, r=20, t=60, b=20),
     )
     st.plotly_chart(fig, use_container_width=True)
-
-    with st.expander("📌 사분면 해석 가이드"):
-        st.markdown(
-            "- **4사분면 (우하단 — 고수요·저매출)**: **핵심 검토 후보 영역.** 잠재 수요가 풍부하나 기존 점포당 매출/밀도가 낮아 신규 진입 여력이 큽니다.\n"
-            "- **1사분면 (우상단 — 고수요·고매출)**: 대형 중심 상권. 시장 규모가 크나 경쟁 강도가 높습니다.\n"
-            "- **2사분면 (좌상단 — 저수요·고매출)**: 특정 목적형 단골 중심 상권입니다.\n"
-            "- **3사분면 (좌하단 — 저수요·저매출)**: 배후 수요와 매출이 모두 낮아 리스크가 높은 영역입니다."
-        )
-
 
 def render_reverse_view(df: pd.DataFrame) -> None:
     """화면 ④ 역방향 탐색 (상권 선택 → 공급 부족 업종 Top 5)"""

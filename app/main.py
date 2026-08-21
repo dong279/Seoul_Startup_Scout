@@ -153,7 +153,7 @@ if mode == MODE_ANALYSIS:
             st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
 
     with tab2:
-        render_scatter_view(df_filtered)
+        render_scatter_view(df_filtered, df_master)
 
     with tab3:
         render_detail_view(df_filtered, df_master, df_news)
