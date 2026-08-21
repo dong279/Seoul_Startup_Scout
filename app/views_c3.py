@@ -42,7 +42,7 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
 
 
 def _render_news(articles: pd.DataFrame) -> None:
-    """최근 기사 최대 3건을 표시."""
+    """최근 기사 최대 3건을 빈 상태까지 포함해 표시한다."""
     st.subheader("📰 최근 3개월 경제지 기사")
     if articles.empty:
         st.info("최근 3개월 관련 기사 없음")

@@ -1,5 +1,12 @@
 """app/logic.py — 대시보드 로직 (Streamlit 비의존 · C조 오너)
-DEV_SPEC §4 아티팩트 1·2·3, §5-6 종합점수
+
+**이 파일에 streamlit을 import하지 않는다.** 위젯·레이아웃은 `app/main.py`,
+데이터 변환·점수 재계산·필터는 전부 여기다. 분리 이유는 하나 —
+`seams/check_app.py`가 이 함수들을 직접 호출해 계약 준수를 기계 검사할 수 있게
+하기 위해서다. UI에 로직이 섞이면 에이전트 산출물의 수용 기준을
+"화면이 잘 뜨면"으로밖에 쓸 수 없다.
+
+계약: DEV_SPEC §4 아티팩트 1·2·3, §5-6 종합점수
 """
 from __future__ import annotations
 
@@ -54,6 +61,18 @@ def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
             df[c] = pd.NA
     return df
 
+def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
+    """상세 패널에 필요한 연령·요일별 매출 데이터를 불러온다."""
+    return pd.read_csv(
+        path,
+        encoding="utf-8-sig",
+        dtype={
+            "기준_년분기_코드": str,
+            "상권_코드": str,
+            "서비스_업종_코드": str,
+            "행정동_코드": str,
+        },
+    )
 
 def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
     """상세 패널용 master 데이터 로드."""
@@ -199,7 +218,6 @@ def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame
         return news
     return news[news["상권_코드"] == 상권_코드].sort_values("날짜", ascending=False).head(n)
 
-
 def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
     """해당 업종 분기별 추이 조회."""
     if trend.empty:
@@ -211,3 +229,21 @@ def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
 def reverse_lookup(df: pd.DataFrame, 상권_코드: str, n: int = 5) -> pd.DataFrame:
     """④ 역방향 탐색 — 상권 기준 공급 부족 업종 Top N."""
     return df[df["상권_코드"] == 상권_코드].nlargest(n, "종합점수")
+
+
+# ── 입지 탐색 ─────────────────────────────────────────────────────────
+def forward_lookup(
+    df: pd.DataFrame,
+    업종명: str,
+    유형: list[str] | None = None,
+    자치구: list[str] | None = None,
+    n: int = 10,
+) -> pd.DataFrame:
+    """입지 탐색 — 업종 기준 검토 후보 상권 Top N. `reverse_lookup`의 대칭.
+
+    scores.csv는 공급갭>0 후보만 담기므로(§4 아티팩트 2) 특정 업종의 후보가
+    없거나 극소수인 것은 **정상 상태**다. 화면은 이를 빈 결과로 안내한다.
+    업종을 고정하면 상권_코드가 유일해지므로 결과는 상권 단위 비교표가 된다.
+    """
+    out = filter_candidates(df, 업종=[업종명], 유형=유형, 자치구=자치구)
+    return out.nlargest(n, "종합점수")
