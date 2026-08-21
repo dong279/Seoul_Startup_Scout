@@ -1,5 +1,8 @@
 """app/main.py — 대시보드 메인 엔트리포인트
-DEV_SPEC §6 준수: 사이드바 조건 변경 시 산점도/목록/지표 동시 갱신
+
+탐색 모드 3종: 📍 입지 탐색(업종→상권) / ☕ 업종 후보 확인(상권→업종) / 📊 종합 분석.
+DEV_SPEC §6 준수: 종합 분석 모드에서 사이드바 조건 변경 시 목록/산점도/지표 동시 갱신.
+탐색 모드는 사이드바를 그리지 않아 화면 내 선택과 조건이 충돌하지 않는다.
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ try:
     )
     from app.views_c2 import render_reverse_view, render_scatter_view
     from app.views_c3 import render_detail_view
+    from app.views_forward import render_forward_view
 except ImportError:
     from logic import (
         filter_candidates,
@@ -36,6 +40,7 @@ except ImportError:
     )
     from views_c2 import render_reverse_view, render_scatter_view
     from views_c3 import render_detail_view
+    from views_forward import render_forward_view
 
 st.set_page_config(page_title="서울 창업 입지 탐색기", page_icon="🧭", layout="wide")
 
@@ -83,55 +88,86 @@ def get_data():
 
 df_raw, df_news, df_master = get_data()
 
-st.sidebar.header("🔍 탐색 조건 설정")
-
-w_gap = st.sidebar.slider("공급갭 가중치", 0.0, 1.0, 0.6, 0.05)
-w_stab = st.sidebar.slider("안정성 가중치", 0.0, 1.0, 0.4, 0.05)
-
-all_jongs = sorted(df_raw["서비스_업종_코드_명"].dropna().unique().tolist())
-selected_jongs = st.sidebar.multiselect("업종 선택 (다중 선택 가능)", all_jongs, default=[])
-
-all_types = sorted(df_raw["유형"].dropna().unique().tolist())
-selected_types = st.sidebar.multiselect("상권 유형 선택", all_types, default=[])
-
-all_gus = sorted(df_raw["자치구_코드_명"].dropna().unique().tolist())
-selected_gus = st.sidebar.multiselect("자치구 선택", all_gus, default=[])
-
-df_rescored = rescore(df_raw, w_gap, w_stab)
-df_filtered = filter_candidates(df_rescored, 업종=selected_jongs, 유형=selected_types, 자치구=selected_gus)
-
 st.title("🧭 서울 창업 입지 탐색기 (Seoul Startup Scout)")
 st.caption("서울시 상권 데이터 기반 공급 부족 & 안정성 기반 창업 검토 후보 탐색")
 
-stats = summary(df_filtered)
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("검토 후보 건수", f"{stats['후보_수']:,}건")
-c2.metric("해당 상권 수", f"{stats['상권_수']:,}개")
-c3.metric("평균 종합점수", f"{stats['평균_종합점수']:.3f}점")
-c4.metric("평균 공급갭", f"{stats['평균_공급갭']:.3f}")
+# ── 탐색 모드 ────────────────────────────────────────────────────────
+# st.tabs는 활성 탭을 파이썬 쪽에서 알 수 없어 탭별로 사이드바를 제어할 수 없다.
+# 모드를 단일 선택으로 두면 각 모드가 자기 조건 위젯만 그리므로, 탐색 모드에서
+# 사이드바 필터와 화면 내 선택이 서로 모순되는 구간이 생기지 않는다(§6 연동 원칙).
+MODE_FORWARD = "📍 입지 탐색"
+MODE_REVERSE = "☕ 업종 후보 확인"
+MODE_ANALYSIS = "📊 종합 분석"
 
+mode = st.radio(
+    "탐색 모드",
+    [MODE_FORWARD, MODE_REVERSE, MODE_ANALYSIS],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 st.divider()
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "① 후보 탐색 (목록)",
-    "② 상권 포지셔닝 (산점도)",
-    "③ 상권 상세 패널",
-    "④ 역방향 탐색",
-])
+if mode == MODE_ANALYSIS:
+    # 사이드바는 이 모드에서만 그린다 — 다른 모드에서는 호출 자체를 하지 않는다.
+    st.sidebar.header("🔍 탐색 조건 설정")
 
-with tab1:
-    st.subheader("📋 검토 후보 목록")
-    if df_filtered.empty:
-        st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
+    w_gap = st.sidebar.slider("공급갭 가중치", 0.0, 1.0, 0.6, 0.05)
+    w_stab = st.sidebar.slider("안정성 가중치", 0.0, 1.0, 0.4, 0.05)
+
+    all_jongs = sorted(df_raw["서비스_업종_코드_명"].dropna().unique().tolist())
+    selected_jongs = st.sidebar.multiselect("업종 선택 (다중 선택 가능)", all_jongs, default=[])
+
+    all_types = sorted(df_raw["유형"].dropna().unique().tolist())
+    selected_types = st.sidebar.multiselect("상권 유형 선택", all_types, default=[])
+
+    all_gus = sorted(df_raw["자치구_코드_명"].dropna().unique().tolist())
+    selected_gus = st.sidebar.multiselect("자치구 선택", all_gus, default=[])
+
+    df_rescored = rescore(df_raw, w_gap, w_stab)
+    df_filtered = filter_candidates(
+        df_rescored, 업종=selected_jongs, 유형=selected_types, 자치구=selected_gus
+    )
+
+    stats = summary(df_filtered)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("검토 후보 건수", f"{stats['후보_수']:,}건")
+    c2.metric("해당 상권 수", f"{stats['상권_수']:,}개")
+    c3.metric("평균 종합점수", f"{stats['평균_종합점수']:.3f}점")
+    c4.metric("평균 공급갭", f"{stats['평균_공급갭']:.3f}")
+
+    st.divider()
+
+    tab1, tab2, tab3 = st.tabs([
+        "① 후보 목록",
+        "② 상권 포지셔닝 (산점도)",
+        "③ 상권 상세 패널",
+    ])
+
+    with tab1:
+        st.subheader("📋 검토 후보 목록")
+        st.caption("후보 목록을 사용자가 설정한 공급 가중치와 안정 가중치를 반영해 산출한 종합 점수 순으로 정렬하여 보여줍니다.")
+        if df_filtered.empty:
+            st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
+        else:
+            disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수"]
+            st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
+
+    with tab2:
+        render_scatter_view(df_filtered)
+
+    with tab3:
+        render_detail_view(df_filtered, df_master, df_news)
+
+else:
+    # 탐색 모드는 슬라이더를 두지 않는다 — DEV_SPEC §5-6 확정 가중치(0.6:0.4)를 쓴다.
+    df_rescored = rescore(df_raw)
+
+    if mode == MODE_FORWARD:
+        render_forward_view(df_rescored)
     else:
-        disp_cols = ["상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명", "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수"]
-        st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
+        render_reverse_view(df_rescored)
 
-with tab2:
-    render_scatter_view(df_filtered)
-
-with tab3:
-    render_detail_view(df_filtered, df_master, df_news)
-
-with tab4:
-    render_reverse_view(df_rescored)
+    st.caption(
+        "종합점수는 DEV_SPEC §5-6 확정 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다. "
+        "가중치를 직접 조정하려면 상단에서 **📊 종합 분석** 모드를 선택하세요."
+    )
