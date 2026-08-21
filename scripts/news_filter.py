@@ -16,12 +16,15 @@ PRESS = {
     "hankyung.com": "한국경제", "mk.co.kr": "매일경제", "sedaily.com": "서울경제",
     "mt.co.kr": "머니투데이", "asiae.co.kr": "아시아경제",
     "fnnews.com": "파이낸셜뉴스", "edaily.co.kr": "이데일리",
+    "biz.chosun.com": "조선비즈", "heraldcorp.com": "헤럴드경제",
 }
 
-# 서울 음식/외식/식음료 상권 주요 키워드
+# 서울 음식/외식/식음료 상권 주요 키워드 (창업, 상권, 배달, 경기, 임대료 등)
 FOOD_TOPIC = re.compile(
     r"음식|외식|식당|음식점|카페|푸드|베이커리|디저트|주점|먹거리|배달|"
-    r"외식업|요리|맛집|프랜차이즈|상권|매출|임대료|개업|폐업|오픈|소비"
+    r"외식업|요리|맛집|프랜차이즈|상권|매출|임대료|개업|폐업|오픈|소비|"
+    r"자영업|골목상권|창업|공실|상가|야간경제|기업회생|경기|물가|배달앱|"
+    r"가맹점|식음료|권리금|보증금|외식경기"
 )
 
 TAG = re.compile(r"<[^>]+>")
@@ -29,9 +32,10 @@ OID_PRESS = {
     "015": "한국경제", "009": "매일경제", "011": "서울경제",
     "008": "머니투데이", "277": "아시아경제",
     "014": "파이낸셜뉴스", "018": "이데일리",
+    "366": "조선비즈", "016": "헤럴드경제",
 }
-OID_PATTERN = re.compile(r"/article/(\d{3})/")
 OUT_COLS = ["상권_코드", "행정동_base", "제목", "언론사", "날짜", "링크"]
+SEOUL_NEWS_COLS = ["제목", "언론사", "날짜", "링크", "요약"]
 
 
 def clean(s: str) -> str:
@@ -53,25 +57,21 @@ def press_of(url: str) -> str | None:
 
 
 def relevance(area: str, title: str, desc: str) -> int:
-    """서울 단어 및 음식 키워드가 포함된 유의미 기사 판별"""
+    """서울 단어 및 음식/상권 키워드가 포함된 유의미 기사 판별"""
     if not title:
         return 0
 
     text = f"{title} {desc}"
 
-    # 필수 1: 서울 포함
-    if "서울" not in text:
-        return 0
-
-    # 필수 2: 음식 관련 키워드 포함
+    # 필수: 음식/상권/자영업 관련 핵심 키워드가 포함되어야 함
     if not FOOD_TOPIC.search(text):
         return 0
 
     score = 1
 
-    # 해당 행정동 키워드가 직접 들어있으면 우선순위 가점
+    # 지역명 가점
     short_area = area[:-1] if (area.endswith("동") or area.endswith("구")) and len(area) > 2 else area
-    if area in text or short_area in text:
+    if area in text or short_area in text or "서울" in text:
         score += 1
 
     return score
@@ -99,6 +99,8 @@ def expand(area: str, codes: list[str], picks: list[tuple]) -> list[dict]:
 def save(rows: list[dict], path: str = "data/news.csv") -> pd.DataFrame:
     import os
     out = pd.DataFrame(rows, columns=OUT_COLS)
+    # 동일 상권 내 중복 기사(링크 및 제목 기준) 제거
+    out = out.drop_duplicates(subset=["상권_코드", "링크"]).drop_duplicates(subset=["상권_코드", "제목"]).reset_index(drop=True)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     out.to_csv(path, index=False, encoding="utf-8-sig")
     return out
