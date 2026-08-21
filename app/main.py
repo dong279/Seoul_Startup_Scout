@@ -164,11 +164,7 @@ else:
     if mode == MODE_FORWARD:
         render_forward_view(df_rescored)
     else:
-        disp_cols = [
-            "상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명",
-            "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "전체_점포_수",
-        ]
-        st.dataframe(df_filtered[disp_cols].head(10000), use_container_width=True, hide_index=True)
+        render_reverse_view(df_rescored)
 
     st.caption(
         "종합점수는 DEV_SPEC §5-6 확정 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다. "
