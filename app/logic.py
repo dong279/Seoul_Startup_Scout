@@ -58,7 +58,11 @@ def load_news(path: str = NEWS_PATH) -> pd.DataFrame:
         return pd.DataFrame(columns=NEWS_COLS)
     for c in NEWS_COLS:
         if c not in df.columns:
-            df[c] = pd.NA
+            # v7에서 수집 단위가 서울 전역이 되며 상권_코드·행정동_base가 사라졌다.
+            # pd.NA로 채우면 화면에서 str(NA) == "<NA>" 가 그대로 렌더된다
+            # (뉴스 화면 캡션에 "🏷️ <NA>"로 노출됐다). 빈 문자열이면 falsy라
+            # 표시 코드의 기존 방어(`if area`)에 자연히 걸린다.
+            df[c] = ""
     return df
 
 def load_master(path: str = MASTER_PATH) -> pd.DataFrame:
