@@ -212,12 +212,6 @@ def detail_for(
     }
 
 
-def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame:
-    """해당 상권 기사 조회."""
-    if news.empty:
-        return news
-    return news[news["상권_코드"] == 상권_코드].sort_values("날짜", ascending=False).head(n)
-
 def trend_for(trend: pd.DataFrame, 업종명: str) -> pd.DataFrame:
     """해당 업종 분기별 추이 조회."""
     if trend.empty:
@@ -247,3 +241,10 @@ def forward_lookup(
     """
     out = filter_candidates(df, 업종=[업종명], 유형=유형, 자치구=자치구)
     return out.nlargest(n, "종합점수")
+
+# ── 뉴스 로직 ─────────────────────────────────────────────────────────
+def news_for(news: pd.DataFrame, 상권_코드: str, n: int = 3) -> pd.DataFrame:
+    """해당 상권 기사 조회."""
+    if news.empty:
+        return news
+    return news[news["상권_코드"] == 상권_코드].sort_values("날짜", ascending=False).head(n)
