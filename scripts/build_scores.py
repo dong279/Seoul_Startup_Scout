@@ -97,7 +97,7 @@ def main() -> int:
     s = s[s["공급갭"] > 0].copy()
 
     # --- 5-6 점수화 (방향 통일: 셋 다 높을수록 좋음) ---
-    s["갭점수"] = minmax(s["공급갭"]).round(4)
+    s["갭점수"] = s.groupby("유형")["공급갭"].transform(minmax).round(4)
     s["안정성점수"] = (1 - minmax(s["행정동_폐업률"])).round(4)   # 반전 필수
     wg, ws = W_SCORE
     s["종합점수"] = (wg * s["갭점수"] + ws * s["안정성점수"]).round(4)
