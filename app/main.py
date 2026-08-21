@@ -29,6 +29,7 @@ try:
     from app.views_c2 import render_reverse_view, render_scatter_view
     from app.views_c3 import render_detail_view, render_news_view
     from app.views_forward import render_forward_view
+    from app import style, theme, ui
 except ImportError:
     from logic import (
         filter_candidates,
@@ -41,8 +42,13 @@ except ImportError:
     from views_c2 import render_reverse_view, render_scatter_view
     from views_c3 import render_detail_view, render_news_view
     from views_forward import render_forward_view
+    import style, theme, ui
 
 st.set_page_config(page_title="서울 창업 입지 탐색기", page_icon="🧭", layout="wide")
+
+# 표시 계층 — 로직과 무관하다. 이 두 줄을 지우면 Streamlit 기본 화면으로 돌아온다.
+style.inject()   # app/style.py — 전역 CSS
+theme.apply()    # app/theme.py — plotly 차트 공통 테마
 
 
 @st.cache_data
@@ -98,8 +104,17 @@ def get_data():
 
 df_raw, df_news, df_master = get_data()
 
-st.title("🧭 서울 창업 입지 탐색기 (Seoul Startup Scout)")
-st.caption("서울시 상권 데이터 기반 공급 부족 & 안정성 기반 창업 검토 후보 탐색")
+ui.appbar(
+    "서울 창업 입지 탐색기",
+    "같은 유형 상권끼리 비교해 공급이 부족하고 폐업률이 안정적인 상권 × 업종을 검토 후보로 제시합니다.",
+    chips=[
+        f"검토 후보 {len(df_raw):,}건",
+        f"상권 {df_raw['상권_코드'].nunique():,}개",
+        f"업종 {df_raw['서비스_업종_코드_명'].nunique()}종",
+        f"유형 {df_raw['유형'].nunique()}종",
+        "서울 열린데이터광장 · 공공누리 1유형",
+    ],
+)
 
 # ── 탐색 모드 순서 (종합분석 바로 옆에 상권 뉴스 배치) ──────────────
 MODE_ANALYSIS = "📊 종합 분석"
@@ -137,13 +152,16 @@ if mode == MODE_ANALYSIS:
     )
 
     stats = summary(df_filtered)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("검토 후보 건수", f"{stats['후보_수']:,}건")
-    c2.metric("해당 상권 수", f"{stats['상권_수']:,}개")
-    c3.metric("평균 종합점수", f"{stats['평균_종합점수']:.3f}점")
-    c4.metric("평균 공급갭", f"{stats['평균_공급갭']:.3f}")
-
-    st.divider()
+    ui.kpi_row([
+        {"icon": "🎯", "label": "검토 후보", "value": f"{stats['후보_수']:,}", "unit": "건",
+         "foot": "공급갭이 양(+)인 상권 × 업종 조합"},
+        {"icon": "📍", "label": "해당 상권", "value": f"{stats['상권_수']:,}", "unit": "개",
+         "foot": "후보에 포함된 서로 다른 상권"},
+        {"icon": "⭐", "label": "평균 종합점수", "value": f"{stats['평균_종합점수']:.3f}",
+         "foot": f"공급갭 {w_gap:.2f} : 안정성 {w_stab:.2f} 기준"},
+        {"icon": "📉", "label": "평균 공급갭", "value": f"{stats['평균_공급갭']:.3f}",
+         "foot": "동일 유형 중앙 공급밀도 대비 여유분"},
+    ])
 
     tab1, tab2, tab3 = st.tabs([
         "① 후보 목록",
@@ -152,16 +170,19 @@ if mode == MODE_ANALYSIS:
     ])
 
     with tab1:
-        st.subheader("📋 검토 후보 목록")
-        st.caption("후보 목록을 사용자가 설정한 공급 가중치와 안정 가중치를 반영해 산출한 종합 점수 순으로 정렬하여 보여줍니다.")
+        ui.section(
+            "검토 후보 목록",
+            "사이드바 가중치로 계산한 종합점수 순입니다. 매출은 점수에 들어가지 않고, "
+            "공급갭이 비슷한 후보 간 규모 차이를 판단하시라고 함께 표시합니다.",
+        )
         if df_filtered.empty:
-            st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
+            ui.empty_state(
+                "조건을 만족하는 검토 후보가 없습니다",
+                "사이드바의 업종·유형·자치구 조건을 하나씩 풀어 보세요. "
+                "조건을 모두 비우면 서울 전체 후보가 표시됩니다.",
+            )
         else:
-            disp_cols = [
-                "상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명",
-                "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "당월_매출_건수", "전체_점포_수",
-            ]
-            st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
+            ui.candidate_table(df_filtered, n=100)
 
     with tab2:
         render_scatter_view(df_filtered, df_master)
@@ -170,7 +191,7 @@ if mode == MODE_ANALYSIS:
         render_detail_view(df_filtered, df_master)
 
 elif mode == MODE_NEWS:
-    render_news_view(df_news)
+    ui.news_page(df_news)
 
 elif mode == MODE_FORWARD:
     df_rescored = rescore(df_raw)
@@ -181,3 +202,9 @@ elif mode == MODE_REVERSE:
     df_rescored = rescore(df_raw)
     render_reverse_view(df_rescored)
     st.caption("종합점수는 DEV_SPEC §5-6 확정 기본 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다.")
+
+ui.footer(
+    "서울 창업 입지 탐색기 · 서울 열린데이터광장 상권분석서비스(서울신용보증재단) · 공공누리 1유형   |   "
+    "본 서비스는 특정 입지의 성공을 보장하지 않으며, 현장 조사 전 검토 대상을 좁히는 의사결정 보조 도구입니다. "
+    "임대료·권리금 등 데이터로 확보할 수 없는 요소는 반영되어 있지 않습니다."
+)
