@@ -30,8 +30,8 @@ def main() -> int:
     now = datetime.now()
     cutoff = (now - timedelta(days=DAYS)).strftime("%Y-%m-%d")
 
-    query = f"서울 {AREA} 상권 음식점"
-    url = f"https://search.naver.com/search.naver?where=news&query={quote(query)}&sm=tab_opt&sort=1"
+    query = f"서울 {AREA} 상권"
+    url = f"https://search.naver.com/search.naver?where=news&query={quote(query)}&sm=tab_opt&sort=0"
 
     sess = requests.Session()
     sess.headers["User-Agent"] = UA
@@ -49,7 +49,7 @@ def main() -> int:
     economy_links = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        if NAVER_ARTICLE_RE.match(href):
+        if NAVER_ARTICLE_RE.search(href):
             all_naver_links.append(href)
             if press_of(href):
                 economy_links.append(href)
