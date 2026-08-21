@@ -1,0 +1,15 @@
+# .streamlit/config.toml — 대시보드 기본 테마
+# 색은 common/viz.py 의 TYPE_COLORS 계열(네이비 #2E5C8A)에 맞춘다.
+# 여기서 잡는 것은 Streamlit이 공식 지원하는 기본 색뿐이고,
+# 카드·탭·모드 버튼 같은 세부 표현은 app/style.py 의 CSS가 담당한다.
+
+[theme]
+base = "light"
+primaryColor = "#2E5C8A"              # 슬라이더·포커스·선택 강조
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F9"  # 사이드바·코드블록 바탕
+textColor = "#1F2937"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
