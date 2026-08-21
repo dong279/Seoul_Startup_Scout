@@ -1,6 +1,6 @@
 """app/main.py — 대시보드 메인 엔트리포인트
 
-탐색 모드 4종: 📊 종합 분석 / 📍 입지 탐색 / ☕ 업종 후보 확인 / 📰 상권 뉴스
+탐색 모드 4종: 📊 종합 분석 / 📰 상권 뉴스 / 📍 입지 탐색 / ☕ 업종 후보 확인
 DEV_SPEC §6 준수: 종합 분석 모드에서 사이드바 조건 변경 시 목록/산점도/지표 동시 갱신.
 """
 from __future__ import annotations
@@ -90,22 +90,21 @@ df_raw, df_news, df_master = get_data()
 st.title("🧭 서울 창업 입지 탐색기 (Seoul Startup Scout)")
 st.caption("서울시 상권 데이터 기반 공급 부족 & 안정성 기반 창업 검토 후보 탐색")
 
-# ── 탐색 모드 4종 순서 정의 ──────────────────────────────────────────
+# ── 탐색 모드 순서 (종합분석 바로 옆에 상권 뉴스 배치) ──────────────
 MODE_ANALYSIS = "📊 종합 분석"
+MODE_NEWS = "📰 상권 뉴스"
 MODE_FORWARD = "📍 입지 탐색"
 MODE_REVERSE = "☕ 업종 후보 확인"
-MODE_NEWS = "📰 상권 뉴스"
 
 mode = st.radio(
     "탐색 모드",
-    [MODE_ANALYSIS, MODE_FORWARD, MODE_REVERSE, MODE_NEWS],
+    [MODE_ANALYSIS, MODE_NEWS, MODE_FORWARD, MODE_REVERSE],
     horizontal=True,
     label_visibility="collapsed",
 )
 st.divider()
 
 if mode == MODE_ANALYSIS:
-    # 사이드바는 종합 분석 모드에서만 활성화
     st.sidebar.header("🔍 탐색 조건 설정")
 
     w_gap = st.sidebar.slider("공급갭 가중치", 0.0, 1.0, 0.6, 0.05)
@@ -142,6 +141,7 @@ if mode == MODE_ANALYSIS:
 
     with tab1:
         st.subheader("📋 검토 후보 목록")
+        st.caption("후보 목록을 사용자가 설정한 공급 가중치와 안정 가중치를 반영해 산출한 종합 점수 순으로 정렬하여 보여줍니다.")
         if df_filtered.empty:
             st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
         else:
@@ -157,6 +157,9 @@ if mode == MODE_ANALYSIS:
     with tab3:
         render_detail_view(df_filtered, df_master)
 
+elif mode == MODE_NEWS:
+    render_news_view(df_news)
+
 elif mode == MODE_FORWARD:
     df_rescored = rescore(df_raw)
     render_forward_view(df_rescored)
@@ -166,6 +169,3 @@ elif mode == MODE_REVERSE:
     df_rescored = rescore(df_raw)
     render_reverse_view(df_rescored)
     st.caption("종합점수는 DEV_SPEC §5-6 확정 기본 가중치(공급갭 0.6 : 안정성 0.4) 기준입니다.")
-
-elif mode == MODE_NEWS:
-    render_news_view(df_news)

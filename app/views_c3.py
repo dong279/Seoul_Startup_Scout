@@ -44,6 +44,7 @@ def _candidate_options(scores: pd.DataFrame) -> pd.DataFrame:
 def render_detail_view(
     scores: pd.DataFrame,
     master: pd.DataFrame,
+    news: pd.DataFrame | None = None,
 ) -> None:
     """화면 ③: 검토 후보 하나의 근거·인구·매출 표시."""
     st.subheader("🏢 상권 상세 패널")
@@ -112,16 +113,16 @@ def render_detail_view(
         )
 
 
-def render_news_view(news: pd.DataFrame, scores: pd.DataFrame | None = None) -> None:
-    """화면: 수집된 최근 경제지 상권 기사 전체 목록 표시 (선택/필터 없이 전체 출력)."""
+def render_news_view(news: pd.DataFrame) -> None:
+    """화면: 수집된 최근 경제지 상권 기사 전체 목록 표시."""
     st.subheader("📰 상권 경제지 기사 동향")
-    st.caption("서울 주요 상권 및 행정동의 최근 3개월 경제지 관련 기사 모음입니다.")
+    st.caption("서울 주요 상권 및 외식·창업 관련 최근 3개월 경제지 기사 모음입니다.")
 
     if news.empty:
         st.info("수집된 뉴스 데이터가 없습니다.")
         return
 
-    # 중복 기사 제거 (제목 및 링크 기준) 후 최신 날짜순 정렬
+    # 중복 기사 제거 및 최신 날짜순 정렬
     display_news = news.drop_duplicates(subset=["제목", "링크"]).sort_values("날짜", ascending=False)
 
     st.markdown(f"총 **{len(display_news):,}건**의 상권 관련 경제지 기사")
@@ -137,7 +138,7 @@ def render_news_view(news: pd.DataFrame, scores: pd.DataFrame | None = None) -> 
         text_col, link_col = st.columns([5, 1])
         with text_col:
             st.markdown(f"**{title}**")
-            caption_parts = [p for p in [press, published_at, f"📍 {area}" if (area and area != "nan") else ""] if p]
+            caption_parts = [p for p in [press, published_at, f"🏷️ {area}" if (area and area != "nan") else ""] if p]
             st.caption(" · ".join(caption_parts))
         with link_col:
             if pd.notna(link) and str(link).strip():
