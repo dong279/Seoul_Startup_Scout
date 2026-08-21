@@ -128,7 +128,7 @@ with tab1:
             "상권_코드_명", "서비스_업종_코드_명", "유형", "자치구_코드_명",
             "종합점수", "공급갭", "행정동_폐업률", "당월_매출_금액", "전체_점포_수",
         ]
-        st.dataframe(df_filtered[disp_cols].head(100), use_container_width=True, hide_index=True)
+        st.dataframe(df_filtered[disp_cols].head(10000), use_container_width=True, hide_index=True)
 
 with tab2:
     render_scatter_view(df_filtered)
