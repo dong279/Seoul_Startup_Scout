@@ -145,6 +145,7 @@ if mode == MODE_ANALYSIS:
 
     with tab1:
         st.subheader("📋 검토 후보 목록")
+        st.caption("후보 목록을 사용자가 설정한 공급 가중치와 안정 가중치를 반영해 산출한 종합 점수 순으로 정렬하여 보여줍니다.")
         if df_filtered.empty:
             st.info("조건을 만족하는 검토 후보가 없습니다. 사이드바 조건을 완화해 주세요.")
         else:
