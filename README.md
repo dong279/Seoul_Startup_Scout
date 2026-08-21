@@ -9,6 +9,7 @@ Streamlit 대시보드.
 공급밀도·폐업률·업종 추이 등 **모든 지표를 이 11종 범위 안에서 계산**한다.
 
 > 계약 정본은 [`DEV_SPEC.md`](DEV_SPEC.md) · 결정 이력은 [`docs/킥오프_회의록.md`](docs/킥오프_회의록.md)
+> · 산출 수치 검증은 [`docs/데이터_전처리_분석_보고서.md`](docs/데이터_전처리_분석_보고서.md)
 
 ## 설치 및 실행
 
@@ -24,18 +25,13 @@ uv run python seams/check_master.py      # → OK 확인
 uv run python scripts/build_scores.py
 uv run python seams/check_scores.py      # → OK 확인
 
-# 4. 뉴스 수집 (requests + BeautifulSoup · 서울 전체 외식/창업 주제 8종)
+# 4. 뉴스 수집 (requests + BeautifulSoup · 서울 전역 음식·창업 12개 검색어)
 uv run python scripts/scrape_news.py
 uv run python seams/check_news.py        # → OK 확인
-#    ⚠️ 게이트는 형식만 본다. 기사가 쓸모 있는지는 사람이 목록을 봐야 한다 (DEV_SPEC §4-3f)
-uv run python -c "import pandas as pd; d=pd.read_csv('data/news.csv',encoding='utf-8-sig'); print(d.drop_duplicates('제목')[['행정동_base','언론사','날짜','제목']].to_string())"
+#    ⚠️ 게이트는 형식만 본다. 기사가 쓸모 있는지는 사람이 목록을 봐야 한다 (DEV_SPEC §4-3d)
 #    수집이 0건이거나 이상하면: uv run python scripts/debug_scrape.py [검색어]
-#    확보 기사 5건 미만이면 검색 API 백업 경로로 자동 전환 (.env 에 키 필요)
 
-# 5. 참고 지표 (선택 — 없으면 상세 패널의 해당 영역만 비워진다)
-uv run python scripts/build_trend.py
-
-# 6. 앱 로직 계약 검증 + 대시보드 실행
+# 5. 앱 로직 계약 검증 + 대시보드 실행
 uv run python seams/check_app.py         # → OK 확인
 uv run streamlit run app/main.py
 ```
@@ -51,10 +47,10 @@ uv run python seams/check_app.py data/mock/scores.csv data/mock/news.csv
 
 ```
 data/raw/ (CSV 7종, cp949)
-   → build_master.py   → master.csv          (106,337행 × 77컬럼 · 상권 1,558 · 업종 62)
-   → build_scores.py   → scores.csv          (후보 3,443건 · 유형 7종 · 업종 11종 · 상권 1,339)
-   → scrape_news.py    → news.csv            (서울 외식·창업 최근 3개월 경제지 기사, bs4)
-   → build_trend.py    → industry_trend.csv  (업종 11종 × 5분기 = 55행, 참고 표시용)
+   → build_master.py   → master.csv             (106,337행 × 77컬럼 · 상권 1,558 · 업종 62)
+   → build_scores.py   → scores.csv             (후보 3,443건 · 유형 7종 · 업종 11종 · 상권 1,339)
+   → scrape_news.py    → seoul_food_news.csv    (서울 외식·창업 최근 3개월 경제지 기사)
+                       → news.csv               (요약 제외본)
    → app/main.py       (Streamlit)
 ```
 
@@ -63,10 +59,29 @@ data/raw/ (CSV 7종, cp949)
 대조 근거가 필요하기 때문이며, 그 대조 분석 외에는 어떤 집계도 62종으로 돌리지 않는다
 (`DEV_SPEC.md` 아티팩트 1의 소비 규약).
 
+## 화면 구성
+
+탐색 모드 4종 — 좌측 상단에서 전환한다.
+
+| 모드 | 내용 |
+|---|---|
+| 📊 **종합 분석** | 사이드바(업종·유형·자치구 필터 + **가중치 슬라이더 2종**) → 요약 지표 4종 + 탭 3개 |
+| └ ① 후보 목록 | 종합점수 순 표. 당월 매출 금액·건수 병기 (점수 미포함) |
+| └ ② 업종별 개폐업률 산점도 | x=개업률, y=폐업률, size=점포수, 평균선 사분면. **11종 = 점 11개** |
+| └ ③ 상권 상세 패널 | 유형·판정 근거 / 공급밀도 vs 동일유형 중앙값 / 행정동 폐업률 / 연령 구성 / 요일별 매출 |
+| 📰 **상권 뉴스** | 서울 외식·창업 최근 3개월 경제지 기사 (제목·언론사·날짜·원문 링크) |
+| 📍 **입지 탐색** | 업종 선택 → 검토 후보 상권 Top N (정방향) |
+| ☕ **업종 후보 확인** | 상권 선택 → 공급 부족 업종 Top 5 (역방향) |
+
+가중치 슬라이더는 종합 분석 모드에만 둔다. 나머지 모드는 확정 가중치(0.6:0.4)를 쓰며
+화면 하단에 그 사실을 안내한다.
+
 ## 주요 설계
 
 - **유형별 기준선 대비 갭 분석** — 서울 전체 순위는 "번화가가 좋다"는 자명한 결론으로
-  수렴하므로, 상권을 7개 유형으로 분류한 뒤 같은 유형 안에서 공급 부족을 탐지
+  수렴하므로, 상권을 7개 유형으로 분류한 뒤 같은 유형 안에서 공급 부족을 탐지.
+  **갭 점수도 같은 유형 안에서 정규화**한다 — 비교군을 정의해 놓고 점수만 전체 기준으로
+  매기면 발달상권·관광특구가 통째로 밀린다
 - **유효수요 = 상주+직장+유동 인구의 로그 정규화 균등 가중합** — 직장인구는
   상주·유동과 독립적인 수요 정보(상관 0.23/0.39). 로그 없이는 스케일 차이(404배)로
   직장인구가 지표에서 사라진다
@@ -75,24 +90,30 @@ data/raw/ (CSV 7종, cp949)
   대상과 일치시켰다. "이 지역에서 **외식업이** 얼마나 버티는가"를 재는 지표다
 - **가중치는 팀이 아니라 사용자가 정한다** — 갭·안정성 슬라이더 2종(기본 0.6:0.4).
   팀이 고정하면 "왜 그 숫자인가"에 답이 없다
+- **뉴스는 서울 전역 단위** — 행정동별 수집은 요청 342회로 HTTP 403 차단을 불렀고
+  정밀도도 절반이었다. 검색 단위를 서울 전역 음식·창업 12개 질의로 바꾸고, 날짜는
+  검색 결과가 아니라 **기사 원문에서 읽는다**(상대 날짜 파싱 실패 유형을 구조적으로 제거)
 - **데이터 품질 자동 검증** — 조 간 인계는 `seams/` 검증 스크립트 통과가 완료 기준.
   산문 보고가 아니라 게이트 출력이 완료의 증거다
 
 ## 저장소 구조
 
 ```
-├── DEV_SPEC.md            계약 정본 (스키마·지표 정의·미해결 레지스터·결정 기록)
+├── DEV_SPEC.md            계약 정본 (스키마·지표 정의·결정 기록)
 ├── CLAUDE.md              AI 협업 규약
 ├── pyproject.toml         의존성 (uv, 버전 고정) + uv.lock
 ├── config/업종_whitelist.csv   분석 업종 11종 (모든 지표 계산의 적용 대상)
 ├── common/                loader(원본 읽기 단일 창구) · viz(폰트·팔레트)
-├── scripts/               build_master · build_scores · build_trend
-│                          scrape_news(주력) · collect_news(백업) · news_filter(주제+공유 필터) · debug_scrape(진단)
-│                          make_mock(가데이터 생성)
+├── scripts/               build_master · build_scores
+│                          scrape_news(주력) · collect_news(백업) · news_filter(공유 필터)
+│                          debug_scrape(진단) · make_mock(가데이터 생성)
 ├── seams/                 검증 게이트 4종 — master · scores · news · app (수정은 팀장 전담)
-├── notebooks/             EDA (pandas + seaborn/matplotlib)
+├── notebooks/             EDA (pandas + seaborn/matplotlib) · 그래프 12종
+├── reports/figures/       노트북 PNG (발표·README 재사용)
+├── docs/                  기획서 · 킥오프 회의록 · 데이터 전처리·분석 보고서
 ├── data/                  mock/(선착수용) · raw/(로컬 보관) · 산출 CSV
-└── app/                   logic.py(순수 로직, streamlit 비의존) · main.py(위젯·레이아웃)
+└── app/                   logic.py(순수 로직, streamlit 비의존)
+                           main.py(엔트리·모드 라우팅) · views_c2/c3/forward(화면)
 ```
 
 <!-- 4일차: 실행 화면 GIF 삽입 -->
